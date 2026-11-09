@@ -21,6 +21,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export class App {
   private screen: Screen = { kind: 'guild', tab: 'members' };
+  private resetArmed = false;
 
   constructor(
     private root: HTMLElement,
@@ -39,6 +40,7 @@ export class App {
 
   private act(action: string, arg: string): void {
     const s = this.screen;
+    if (action !== 'reset') this.resetArmed = false;
     switch (action) {
       case 'tab':
         this.screen = { kind: 'guild', tab: arg as Tab };
@@ -73,12 +75,16 @@ export class App {
         saveGame(this.state);
         break;
       case 'reset':
-        if (confirm('처음부터 다시 시작할까?')) {
-          clearSave();
-          this.state = newGame();
-          saveGame(this.state);
-          this.screen = { kind: 'guild', tab: 'members' };
+        // 브라우저 확인창이 막힌 환경이 있어 두 번 눌러 확인한다
+        if (!this.resetArmed) {
+          this.resetArmed = true;
+          break;
         }
+        this.resetArmed = false;
+        clearSave();
+        this.state = newGame();
+        saveGame(this.state);
+        this.screen = { kind: 'guild', tab: 'members' };
         break;
     }
     this.render();
@@ -172,7 +178,7 @@ export class App {
 
   private logView(): string {
     return `${this.state.log.map((l) => `<p class="log">${esc(l)}</p>`).join('')}
-      <div class="actions"><button class="ghost danger" data-act="reset">처음부터 다시</button></div>`;
+      <div class="actions"><button class="ghost danger" data-act="reset">${this.resetArmed ? '한 번 더 누르면 모든 진행이 지워진다' : '처음부터 다시'}</button></div>`;
   }
 
   private memberDetail(id: string): string {
