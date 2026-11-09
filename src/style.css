@@ -160,3 +160,22 @@ main { background: var(--cream); border-top: var(--px) solid var(--ink); margin:
 .banner.lose-c { background: var(--red); }
 .center { text-align: center; color: var(--brown); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .card.tap:active, .btn:active { transform: none; } }
+
+/* 직업과 길드 기술 */
+.track { background: var(--paper); border: 2px solid var(--ink); padding: 1px 6px; display: inline-flex; gap: 4px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.track b { color: var(--brown); }
+.track small { color: var(--muted); font-size: 10px; }
+.jobline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.job { font-size: 11px; font-weight: 700; color: #fff; background: var(--brown-2); border: 2px solid var(--ink); padding: 0 5px; text-shadow: 1px 1px 0 var(--ink); }
+.stats b.up { color: var(--blue); }
+.req { font-size: 11px; padding: 1px 6px; border: 2px solid var(--ink); font-variant-numeric: tabular-nums; }
+.req.ok { background: #d9f2cf; color: var(--green-dark); }
+.req.no { background: #fbd9d3; color: var(--red); }
+.btn.mini { font-size: 12px; padding: 4px 10px; justify-self: start; }
+.notice { background: var(--gold); border: var(--px) solid var(--ink); padding: 6px 10px; font-weight: 700; }
+.inv { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px; }
+.inv-item { padding: 6px 8px; display: grid; grid-template-columns: 1fr auto; gap: 4px; align-items: center; font-size: 12px; }
+.inv-item .btn { grid-column: 1 / -1; justify-self: stretch; }
+.slot { padding: 6px 10px; display: grid; gap: 4px; }
+.exp.job div { background: var(--green); }
+nav button { font-size: 12px; }

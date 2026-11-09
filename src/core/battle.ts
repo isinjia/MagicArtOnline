@@ -1,6 +1,7 @@
+import { effectiveStats } from './items';
 import { josa } from './josa';
 import type { Rng } from './rng';
-import type { Member, Quest, TraitId } from './types';
+import type { JobId, Member, Quest, TraitId } from './types';
 
 export interface UnitSnapshot {
   uid: string;
@@ -14,6 +15,7 @@ export interface UnitSnapshot {
 export type BattleEvent =
   | { kind: 'attack'; actor: string; target: string; dmg: number; crit: boolean; dodged: boolean; hpAfter: number; text: string }
   | { kind: 'intercept'; actor: string; target: string; text: string }
+  | { kind: 'heal'; actor: string; target: string; amount: number; hpAfter: number; text: string }
   | { kind: 'endure'; actor: string; text: string }
   | { kind: 'down'; actor: string; text: string }
   | { kind: 'end'; win: boolean; text: string };
@@ -31,6 +33,7 @@ export interface MemberRecord {
   firstStrike: boolean;
   soloSurvivor: boolean;
   damageDealt: number;
+  heals: number;
 }
 
 export interface BattleResult {
@@ -50,29 +53,40 @@ interface Unit extends UnitSnapshot {
   traits: TraitId[];
   skills: string[];
   endured: boolean;
+  job?: JobId;
+  heal: number;
+  pierce: number;
 }
 
-export function combatStats(m: Member, hpMul = 1) {
+/** 길드원의 전투 능력. 능력치(장비 포함), 등급, 직업과 직업 레벨, 기질, 스킬이 모두 반영된다 */
+export function combatStats(m: Member, hpMul = 1, atkMul = 1) {
   const has = (id: string) => m.skills.includes(id);
   const t = (id: TraitId) => m.traits.includes(id);
+  const st = effectiveStats(m);
+  const lv = m.jobLevel;
+  const job = m.job;
+  const combatJob = ['warrior', 'archer', 'mage', 'cleric', 'rogue'].includes(job);
+  const baseAtk = job === 'mage' ? 4 + st.insight * 1.6 : 4 + st.might * 1.5;
   return {
-    maxHp: Math.round((30 + m.stats.body * 6 + m.grade * 25) * hpMul),
-    atk: (4 + m.stats.might * 1.5 + m.grade * 5) * (t('brave') ? 1.1 : 1) * (has('hunter') ? 1.15 : 1),
-    def: m.stats.body * 0.5 + m.grade * 2.5 + (has('scar') ? 2 : 0),
-    spd: m.stats.agility + (has('swift') ? 4 : 0),
-    crit: 0.05 + m.stats.insight * 0.006 + (t('cold') ? 0.05 : 0) + (has('executioner') ? 0.12 : 0),
-    dodge: m.stats.agility * 0.007 + (t('cautious') ? 0.06 : 0) + (has('shadowstep') ? 0.08 : 0),
+    maxHp: Math.round((30 + st.body * 6 + m.grade * 25 + lv * 4) * (job === 'warrior' ? 1.15 : 1) * hpMul),
+    atk: (baseAtk + m.grade * 5 + (combatJob ? lv * 1.5 : 0)) * (combatJob ? 1 : 0.85) * (t('brave') ? 1.1 : 1) * (has('hunter') ? 1.15 : 1) * atkMul,
+    def: st.body * 0.5 + m.grade * 2.5 + (has('scar') ? 2 : 0) + (job === 'warrior' ? lv * 0.5 : 0),
+    spd: st.agility + (has('swift') ? 4 : 0) + (job === 'archer' ? 2 + lv * 0.3 : 0),
+    crit: 0.05 + st.insight * 0.006 + (t('cold') ? 0.05 : 0) + (has('executioner') ? 0.12 : 0) + (job === 'archer' ? 0.05 + lv * 0.01 : 0),
+    dodge: st.agility * 0.007 + (t('cautious') ? 0.06 : 0) + (has('shadowstep') ? 0.08 : 0) + (job === 'rogue' ? 0.06 + lv * 0.01 : 0),
+    heal: job === 'cleric' ? (6 + st.will + lv * 2) * (has('healer') ? 1.3 : 1) : 0,
+    pierce: job === 'mage' ? 0.5 : 0,
   };
 }
 
 function emptyRecord(): MemberRecord {
-  return { kills: 0, critKills: 0, bossKills: [], dodges: 0, nearDeath: false, endured: false, down: false, savedNames: [], firstStrike: false, soloSurvivor: false, damageDealt: 0 };
+  return { kills: 0, critKills: 0, bossKills: [], dodges: 0, nearDeath: false, endured: false, down: false, savedNames: [], firstStrike: false, soloSurvivor: false, damageDealt: 0, heals: 0 };
 }
 
-export function simulateBattle(party: Member[], quest: Quest, rng: Rng, opts: { hpMul?: number } = {}): BattleResult {
+export function simulateBattle(party: Member[], quest: Quest, rng: Rng, opts: { hpMul?: number; atkMul?: number } = {}): BattleResult {
   const allies: Unit[] = party.map((m) => {
-    const c = combatStats(m, opts.hpMul);
-    return { uid: `a:${m.id}`, memberId: m.id, name: m.name, side: 'ally', boss: false, hp: c.maxHp, ...c, traits: m.traits, skills: m.skills, endured: false };
+    const c = combatStats(m, opts.hpMul, opts.atkMul);
+    return { uid: `a:${m.id}`, memberId: m.id, name: m.name, side: 'ally', boss: false, hp: c.maxHp, ...c, traits: m.traits, skills: m.skills, endured: false, job: m.job };
   });
   const enemies: Unit[] = quest.enemies.map((e, i) => ({
     uid: `e:${i}`,
@@ -89,6 +103,8 @@ export function simulateBattle(party: Member[], quest: Quest, rng: Rng, opts: { 
     traits: [],
     skills: [],
     endured: false,
+    heal: 0,
+    pierce: 0,
   }));
   const all = [...allies, ...enemies];
   const units: UnitSnapshot[] = all.map(({ uid, name, side, maxHp, boss, memberId }) => ({ uid, name, side, maxHp, boss, memberId }));
@@ -105,6 +121,18 @@ export function simulateBattle(party: Member[], quest: Quest, rng: Rng, opts: { 
       if (!alive(actor)) continue;
       const foes = (actor.side === 'ally' ? enemies : allies).filter(alive);
       if (foes.length === 0) break;
+
+      // 성직자: 체력이 절반 아래인 동료가 있으면 공격 대신 치유
+      if (actor.heal > 0) {
+        const hurt = allies.filter((u) => alive(u) && u.hp < u.maxHp * 0.5).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+        if (hurt && rng.chance(0.75)) {
+          const amount = Math.min(hurt.maxHp - hurt.hp, Math.round(actor.heal * (0.9 + rng.next() * 0.2)));
+          hurt.hp += amount;
+          rec(actor)!.heals++;
+          events.push({ kind: 'heal', actor: actor.uid, target: hurt.uid, amount, hpAfter: hurt.hp, text: `${josa(actor.name, '이', '가')} ${hurt.name}의 상처를 ${amount} 치유했다.` });
+          continue;
+        }
+      }
 
       let target = actor.traits.includes('cold') ? foes.reduce((a, b) => (a.hp <= b.hp ? a : b)) : rng.pick(foes);
 
@@ -133,7 +161,7 @@ export function simulateBattle(party: Member[], quest: Quest, rng: Rng, opts: { 
         if (target.boss && actor.skills.includes('slayer')) atk *= 1.2;
         if (actor.skills.includes('lone_wolf') && allies.filter(alive).length === 1) atk *= 1.4;
       }
-      let dmg = Math.max(1, Math.round(atk * (0.85 + rng.next() * 0.3) - target.def));
+      let dmg = Math.max(1, Math.round(atk * (0.85 + rng.next() * 0.3) - target.def * (1 - actor.pierce)));
       if (crit) dmg = Math.round(dmg * 1.8);
       target.hp -= dmg;
       if (rec(actor)) rec(actor)!.damageDealt += dmg;

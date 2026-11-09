@@ -1,4 +1,4 @@
-import type { StatKey, TraitId } from './types';
+import type { JobId, StatKey, TraitId } from './types';
 
 /** 모험가 등급. 길드원 등급이자 퀘스트 등급 */
 export const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'] as const;
@@ -38,10 +38,10 @@ export const ORIGINS = [
 ];
 
 export const QUEST_TYPES = [
-  { name: '산적 토벌', desc: '왕도로 가는 길을 막은 산적 무리를 소탕한다.', foes: ['산적', '산적 궁수'], boss: '산적 두목' },
-  { name: '고블린 소탕', desc: '마을 창고를 털어 가는 고블린을 몰아낸다.', foes: ['고블린', '고블린 투척병'], boss: '고블린 족장' },
-  { name: '폐광 조사', desc: '버려진 광산에서 들리는 소리의 정체를 밝힌다.', foes: ['스켈레톤', '구울'], boss: '망령 기사' },
-  { name: '상단 호위', desc: '향신료 상단을 이웃 영지까지 호위한다.', foes: ['복면 습격자', '도적'], boss: '도적단 두령' },
-  { name: '던전 정찰', desc: '새로 발견된 던전 입구를 정찰한다.', foes: ['동굴 거미', '석상 골렘'], boss: '거미 여왕' },
-  { name: '마수 사냥', desc: '가축을 노리는 마수를 처치한다.', foes: ['다이어울프', '오크 척후병'], boss: '오크 전쟁군주' },
+  { name: '산적 토벌', desc: '왕도로 가는 길을 막은 산적 무리를 소탕한다.', foes: ['산적', '산적 궁수'], boss: '산적 두목', drops: ['leather', 'iron'] },
+  { name: '고블린 소탕', desc: '마을 창고를 털어 가는 고블린을 몰아낸다.', foes: ['고블린', '고블린 투척병'], boss: '고블린 족장', drops: ['iron', 'herb'] },
+  { name: '폐광 조사', desc: '버려진 광산에서 들리는 소리의 정체를 밝힌다.', foes: ['스켈레톤', '구울'], boss: '망령 기사', drops: ['iron', 'manastone'], special: 'cleric' as JobId },
+  { name: '상단 호위', desc: '향신료 상단을 이웃 영지까지 호위한다.', foes: ['복면 습격자', '도적'], boss: '도적단 두령', drops: ['herb', 'meat'] },
+  { name: '던전 정찰', desc: '새로 발견된 던전 입구를 정찰한다.', foes: ['동굴 거미', '석상 골렘'], boss: '거미 여왕', drops: ['silk', 'manastone'], special: 'rogue' as JobId },
+  { name: '마수 사냥', desc: '가축을 노리는 마수를 처치한다.', foes: ['다이어울프', '오크 척후병'], boss: '오크 전쟁군주', drops: ['meat', 'leather'], special: 'archer' as JobId },
 ];

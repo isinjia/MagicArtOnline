@@ -1,14 +1,22 @@
 import { josa } from './josa';
 import { GIVEN_NAMES, ORIGINS, QUEST_TYPES, RANKS, STAT_KEYS, SURNAMES, TRAIT_IDS } from './data';
+import { JOB_IDS, JOBS, meets } from './jobs';
 import { Rng } from './rng';
-import type { EnemyTemplate, GuildState, Member, Quest, Stats, TraitId } from './types';
+import type { EnemyTemplate, GuildState, JobId, Member, Quest, Requirement, Stats, TraitId } from './types';
 
 function newId(state: GuildState, prefix: string): string {
   return `${prefix}${state.nextId++}`;
 }
 
-export function createMember(state: GuildState, rng: Rng): Member {
-  const stats = Object.fromEntries(STAT_KEYS.map((k) => [k, rng.int(3, 8)])) as Stats;
+function randomJob(rng: Rng): JobId {
+  const roll = rng.next();
+  const family = roll < 0.5 ? '전투계' : roll < 0.8 ? '생산계' : '상인계';
+  return rng.pick(JOB_IDS.filter((j) => JOBS[j].family === family));
+}
+
+export function createMember(state: GuildState, rng: Rng, job: JobId = randomJob(rng)): Member {
+  const stats = Object.fromEntries(STAT_KEYS.map((k) => [k, rng.int(3, 7)])) as Stats;
+  for (const [k, v] of Object.entries(JOBS[job].bias)) stats[k as keyof Stats] += v ?? 0;
   const traits: TraitId[] = [rng.pick(TRAIT_IDS)];
   if (rng.chance(0.5)) {
     const second = rng.pick(TRAIT_IDS);
@@ -28,6 +36,10 @@ export function createMember(state: GuildState, rng: Rng): Member {
     history: [{ day: state.day, title: '입단', text: `${origin}. 길드의 문을 두드렸다.`, tags: [] }],
     tagCounts: {},
     injuredUntil: 0,
+    job,
+    jobLevel: 1,
+    jobExp: 0,
+    equip: {},
   };
 }
 
@@ -57,31 +69,52 @@ export function createQuest(state: GuildState, rng: Rng, rank: number): Quest {
     rewardGold: Math.round((30 + rank * 40) * (hasBoss ? 1.5 : 1)),
     rewardExp: Math.round((20 + rank * 25) * (hasBoss ? 1.4 : 1)),
     enemies,
+    reqs: questReqs(rank, type.special),
+    drops: type.drops,
   };
 }
 
-export function refillQuests(state: GuildState, rng: Rng, maxRank: number): void {
+/** 의뢰 수주 조건: 등급이 오를수록 전투 레벨 합계와 최고 레벨이 더 필요하다. 일부 의뢰는 특정 직업이 필요하다 */
+export function questReqs(rank: number, special?: JobId): Requirement[] {
+  if (rank <= 0) return [];
+  const reqs: Requirement[] = [{ track: 'combat', total: 3 * rank + 1, max: rank + 1 }];
+  if (special && rank >= 2) reqs.push({ job: special, total: rank - 1, max: rank - 1 });
+  return reqs;
+}
+
+/** 지금 전투 역량으로 받을 수 있는 가장 높은 의뢰 등급 */
+export function questReach(state: GuildState): number {
+  let r = 0;
+  while (r < RANKS.length - 1 && meets(state.members, questReqs(r + 1)[0])) r++;
+  return r;
+}
+
+/** 받을 수 있는 등급 근처로 채우고, 목표가 되도록 한 단계 위 의뢰도 섞는다 */
+export function refillQuests(state: GuildState, rng: Rng): void {
+  const reach = questReach(state);
   while (state.quests.length < 4) {
-    const rank = Math.max(0, Math.min(maxRank, rng.int(maxRank - 1, maxRank)));
+    const rank = Math.max(0, Math.min(RANKS.length - 1, rng.int(reach - 1, reach + 1)));
     state.quests.push(createQuest(state, rng, rank));
   }
 }
 
 export function newGame(seed = Date.now()): GuildState {
   const state: GuildState = {
-    version: 1,
+    version: 2,
     name: '이름 없는 길드',
     day: 1,
     gold: 100,
     members: [],
     quests: [],
     log: [],
+    items: { iron: 2, herb: 2 },
+    buff: null,
     seed,
     nextId: 1,
   };
   const rng = new Rng(seed);
-  for (let i = 0; i < 3; i++) state.members.push(createMember(state, rng));
-  refillQuests(state, rng, 1);
+  for (const job of ['warrior', 'archer', 'blacksmith'] as JobId[]) state.members.push(createMember(state, rng, job));
+  refillQuests(state, rng);
   state.log.unshift(`1일차. 길드를 세웠다. ${josa(state.members.map((m) => m.name).join(', '), '이', '가')} 함께한다.`);
   state.seed = rng.seed;
   return state;

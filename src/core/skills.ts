@@ -20,6 +20,7 @@ export const SKILLS: SkillDef[] = [
   { id: 'shadowstep', name: '회피 본능', desc: '회피율이 오른다.', need: { dodge: 5 }, bonus: { agility: 1 } },
   { id: 'lone_wolf', name: '고독한 늑대', desc: '홀로 남았을 때 공격력이 크게 오른다.', need: { solo_survivor: 1 }, bonus: { will: 1 } },
   { id: 'slayer', name: '거인 사냥꾼', desc: '우두머리에게 주는 피해가 20% 오른다.', need: { boss_kill: 1 }, bonus: { might: 1 } },
+  { id: 'healer', name: '치유의 손', desc: '치유량이 30% 오른다.', need: { heal: 5 }, bonus: { will: 2 } },
   { id: 'scar', name: '흉터', desc: '쓰러져 본 몸은 더 단단해진다. 방어가 오른다.', need: { down: 3 }, bonus: { body: 2 } },
 ];
 

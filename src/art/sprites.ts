@@ -1,4 +1,4 @@
-import type { Member, StatKey } from '../core/types';
+import type { Member } from '../core/types';
 
 /**
  * 카이로소프트풍 도트 스프라이트를 코드로 그린다.
@@ -174,79 +174,158 @@ const HAIRS = ['#3b2a20', '#8a4b2a', '#e8c25a', '#c0392b', '#2d3e70', '#e6e6e6',
 const CLOTHES = ['#3b7dd8', '#c94c4c', '#3fa36b', '#e0962f', '#7b5fc7', '#2e9c9c', '#d45a9a'];
 const PANTS = ['#5a4636', '#34495e', '#4b3b2a', '#3d5a3a'];
 
-/** 가장 높은 능력치가 겉모습(장비)을 정한다 */
-export function memberClass(m: Member): StatKey {
-  return (Object.entries(m.stats) as [StatKey, number][]).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
-}
-
 export const SPRITE_W = 18;
 export const SPRITE_H = 24;
 
-/** 길드원 스프라이트 18x21. 같은 길드원은 항상 같은 모습 */
+const METAL = '#cfd8e3';
+const WOOD = '#7a4a22';
+
+/** 손에 든 물건과 옷차림은 직업이 정한다 */
 export function drawMember(m: Member, view: View = 'front', frame: Frame = 0): HTMLCanvasElement {
   const h = hash(m.id + m.name);
-  const cls = memberClass(m);
-  const clothes = pickBy(CLOTHES, h, 3);
+  const job = m.job;
+  let clothes = pickBy(CLOTHES, h, 3);
+  if (job === 'cleric') clothes = '#eae6d8';
+  if (job === 'cook') clothes = '#f4f1ea';
+  if (job === 'merchant') clothes = pickBy(['#8e3b46', '#2e5a8a', '#6b4f2a'], h, 5);
   const pal: Palette = {
     h: pickBy(HAIRS, h, 7),
     s: pickBy(SKINS, h, 1),
     e: OUTLINE,
     m: '#c0605a',
     c: clothes,
-    d: shade(clothes, -50),
+    d: shade(clothes, job === 'cleric' || job === 'cook' ? -35 : -50),
     p: pickBy(PANTS, h, 11),
     b: '#3a2a1e',
   };
-  if (cls === 'agility') pal.h = shade(clothes, -30); // 후드
+  if (job === 'rogue') pal.h = shade(clothes, -60); // 두건
   const [c, ctx] = canvas(SPRITE_W, SPRITE_H);
   const ox = 2;
   const oy = 6;
 
-  if (cls === 'will') {
-    // 망토
-    ctx.fillStyle = shade(clothes, -70);
+  if (job === 'cleric') {
+    // 등 뒤 망토
+    ctx.fillStyle = '#c9a43a';
     ctx.fillRect(ox + 1, oy + 9, 12, 8);
   }
   paint(ctx, humanoid(view, frame), pal, ox, oy);
 
-  const metal = '#cfd8e3';
-  if (cls === 'might') {
-    // 검
-    px(ctx, OUTLINE, [[16, 7], [17, 8], [15, 8]]);
-    px(ctx, metal, [[16, 8], [16, 9], [16, 10], [16, 11], [16, 12], [16, 13], [16, 14]]);
-    px(ctx, '#e8c25a', [[15, 15], [16, 15], [17, 15]]);
-    px(ctx, '#7a4a22', [[16, 16], [16, 17]]);
-  } else if (cls === 'insight') {
-    // 뾰족한 마법사 모자 (끝이 옆으로 꺾인다)와 지팡이
-    const hat = shade(clothes, -40);
-    const cone: [number, number][] = [
-      [12, 0], [13, 0],
-      [10, 1], [11, 1],
-      [9, 2], [10, 2], [11, 2],
-      [8, 3], [9, 3], [10, 3], [11, 3],
-      [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
-      [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5], [12, 5],
-    ];
-    const brim: [number, number][] = [];
-    for (let x = 3; x <= 14; x++) brim.push([x, 6]);
-    outlined(ctx, [...cone, ...brim], hat);
-    px(ctx, '#ffcf3f', [[7, 5], [8, 5], [9, 5], [10, 5], [11, 5]]);
-    px(ctx, '#7a4a22', [[16, 9], [16, 10], [16, 11], [16, 12], [16, 13], [16, 14], [16, 15], [16, 16], [16, 17], [16, 18]]);
-    px(ctx, OUTLINE, [[16, 6], [15, 7], [17, 7], [16, 8]]);
-    px(ctx, '#7fe3ff', [[16, 7]]);
-  } else if (cls === 'body') {
-    // 방패
+  // 앞치마
+  if (job === 'blacksmith' || job === 'cook') {
+    ctx.fillStyle = job === 'blacksmith' ? '#6b4a2e' : '#ffffff';
+    ctx.fillRect(ox + 4, oy + 10, 6, 6);
     ctx.fillStyle = OUTLINE;
-    ctx.fillRect(0, 14, 5, 7);
-    ctx.fillStyle = metal;
-    ctx.fillRect(1, 15, 3, 5);
-    px(ctx, '#c94c4c', [[2, 16], [2, 17], [2, 18]]);
-  } else if (cls === 'agility') {
-    // 단검
-    px(ctx, metal, [[16, 14], [16, 15], [16, 16]]);
-    px(ctx, OUTLINE, [[16, 13], [16, 17]]);
+    ctx.fillRect(ox + 4, oy + 16, 6, 1);
+  }
+
+  switch (job) {
+    case 'warrior':
+      sword(ctx);
+      shield(ctx, '#c94c4c');
+      break;
+    case 'archer':
+      // 활
+      px(ctx, WOOD, [[15, 8], [16, 9], [17, 10], [17, 11], [17, 12], [17, 13], [17, 14], [16, 15], [15, 16]]);
+      px(ctx, '#f4f1ea', [[15, 9], [15, 10], [15, 11], [15, 12], [15, 13], [15, 14], [15, 15]]);
+      // 화살통
+      px(ctx, '#8a5530', [[2, 13], [2, 14], [2, 15], [3, 13], [3, 14], [3, 15]]);
+      px(ctx, '#f4f1ea', [[2, 12], [3, 11]]);
+      break;
+    case 'mage':
+      witchHat(ctx, shade(clothes, -40));
+      staff(ctx, '#7fe3ff');
+      break;
+    case 'cleric': {
+      staff(ctx, '#ffcf3f');
+      px(ctx, '#ffcf3f', [[15, 7], [17, 7]]);
+      break;
+    }
+    case 'rogue':
+      px(ctx, METAL, [[16, 14], [16, 15], [16, 16]]);
+      px(ctx, OUTLINE, [[16, 13], [16, 17]]);
+      break;
+    case 'blacksmith':
+      // 망치
+      px(ctx, WOOD, [[16, 11], [16, 12], [16, 13], [16, 14], [16, 15], [16, 16]]);
+      ctx.fillStyle = OUTLINE;
+      ctx.fillRect(14, 8, 5, 4);
+      ctx.fillStyle = '#8a8f99';
+      ctx.fillRect(15, 9, 3, 2);
+      break;
+    case 'tailor':
+      // 베레모와 실타래
+      outlined(ctx, [[5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6], [11, 6], [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [8, 4]], '#c94c4c');
+      outlined(ctx, [[16, 15], [17, 15], [16, 16], [17, 16]], '#d45a9a');
+      break;
+    case 'alchemist':
+      // 플라스크
+      px(ctx, OUTLINE, [[16, 11], [15, 13], [17, 13], [14, 14], [18, 14], [14, 15], [18, 15], [15, 16], [16, 16], [17, 16]]);
+      px(ctx, '#d6f1ff', [[16, 12], [15, 14]]);
+      px(ctx, '#5cdf6a', [[16, 13], [16, 14], [17, 14], [15, 15], [16, 15], [17, 15]]);
+      break;
+    case 'cook': {
+      // 요리사 모자
+      const hat: [number, number][] = [];
+      for (let x = 5; x <= 12; x++) for (let y = 2; y <= 6; y++) if (!(y === 2 && (x === 5 || x === 12))) hat.push([x, y]);
+      outlined(ctx, hat, '#ffffff');
+      px(ctx, '#e6e2d6', [[6, 6], [7, 6], [8, 6], [9, 6], [10, 6], [11, 6]]);
+      // 국자
+      px(ctx, '#8a8f99', [[16, 10], [16, 11], [16, 12], [16, 13], [15, 14], [16, 14], [17, 14]]);
+      break;
+    }
+    case 'merchant':
+      // 모자와 돈주머니
+      outlined(ctx, [[4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6], [11, 6], [12, 6], [13, 6], [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5], [7, 4], [8, 4], [9, 4], [10, 4]], '#3b2a20');
+      outlined(ctx, [[16, 14], [15, 15], [16, 15], [17, 15], [15, 16], [16, 16], [17, 16]], '#e0b04a');
+      px(ctx, '#7a4a22', [[16, 13]]);
+      break;
+    case 'appraiser':
+      // 돋보기
+      px(ctx, OUTLINE, [[15, 10], [16, 10], [17, 10], [14, 11], [18, 11], [14, 12], [18, 12], [15, 13], [16, 13], [17, 13]]);
+      px(ctx, '#d6f1ff', [[15, 11], [16, 11], [17, 11], [15, 12], [16, 12], [17, 12]]);
+      px(ctx, WOOD, [[16, 14], [16, 15], [16, 16]]);
+      // 외알 안경
+      if (view !== 'back') px(ctx, '#ffcf3f', [[11, 10], [11, 12], [10, 11], [12, 11]]);
+      break;
   }
   return c;
+}
+
+function sword(ctx: CanvasRenderingContext2D): void {
+  px(ctx, OUTLINE, [[16, 7], [17, 8], [15, 8]]);
+  px(ctx, METAL, [[16, 8], [16, 9], [16, 10], [16, 11], [16, 12], [16, 13], [16, 14]]);
+  px(ctx, '#e8c25a', [[15, 15], [16, 15], [17, 15]]);
+  px(ctx, WOOD, [[16, 16], [16, 17]]);
+}
+
+function shield(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle = OUTLINE;
+  ctx.fillRect(0, 14, 5, 7);
+  ctx.fillStyle = METAL;
+  ctx.fillRect(1, 15, 3, 5);
+  px(ctx, color, [[2, 16], [2, 17], [2, 18]]);
+}
+
+function staff(ctx: CanvasRenderingContext2D, gem: string): void {
+  px(ctx, WOOD, [[16, 9], [16, 10], [16, 11], [16, 12], [16, 13], [16, 14], [16, 15], [16, 16], [16, 17], [16, 18]]);
+  px(ctx, OUTLINE, [[16, 6], [15, 7], [17, 7], [16, 8]]);
+  px(ctx, gem, [[16, 7]]);
+}
+
+/** 뾰족한 마법사 모자 (끝이 옆으로 꺾인다) */
+function witchHat(ctx: CanvasRenderingContext2D, hat: string): void {
+  const cone: [number, number][] = [
+    [12, 0], [13, 0],
+    [10, 1], [11, 1],
+    [9, 2], [10, 2], [11, 2],
+    [8, 3], [9, 3], [10, 3], [11, 3],
+    [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
+    [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5], [12, 5],
+  ];
+  const brim: [number, number][] = [];
+  for (let x = 3; x <= 14; x++) brim.push([x, 6]);
+  outlined(ctx, [...cone, ...brim], hat);
+  px(ctx, '#ffcf3f', [[7, 5], [8, 5], [9, 5], [10, 5], [11, 5]]);
 }
 
 interface EnemyLook {
@@ -295,7 +374,7 @@ const urlCache = new Map<string, string>();
 
 /** DOM에서 쓸 스프라이트 이미지 주소. 같은 모습이면 캐시를 쓴다 */
 export function memberSpriteUrl(m: Member): string {
-  const key = `${m.id}:${m.name}:${memberClass(m)}`;
+  const key = `${m.id}:${m.name}:${m.job}`;
   let url = urlCache.get(key);
   if (!url) {
     url = drawMember(m).toDataURL();

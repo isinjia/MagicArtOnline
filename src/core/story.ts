@@ -33,6 +33,7 @@ export class TemplateStoryGenerator implements StoryGenerator {
     else if (r.kills === 1) lines.push(`${josa(n, '은', '는')} 적 하나를 베어 넘겼다.`);
     if (r.critKills >= 1) lines.push(pick(['급소를 꿰뚫는 일격이 빛났다.', '단 한 수로 승부를 갈랐다.']));
     if (r.savedNames.length) lines.push(`위기에 처한 ${josa(r.savedNames[0], '을', '를')} 몸으로 막아섰다.`);
+    if (r.heals >= 1) lines.push(r.heals >= 3 ? `쉬지 않고 기도를 올려 동료의 상처를 ${r.heals}번 치료했다.` : '다친 동료에게 치유의 빛을 내렸다.');
     if (r.dodges >= 3) lines.push(pick(['적의 공격을 바람처럼 흘려냈다.', '칼날 사이를 춤추듯 빠져나갔다.']));
     if (r.endured) lines.push('쓰러지기 직전, 이를 악물고 버텨냈다.');
     else if (r.nearDeath && !r.down) lines.push('피투성이가 되어서도 물러서지 않았다.');

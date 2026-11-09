@@ -3,6 +3,33 @@ export type Stats = Record<StatKey, number>;
 
 export type TraitId = 'brave' | 'cautious' | 'loyal' | 'greedy' | 'cold' | 'curious';
 
+/** 직업. 계열은 jobs.ts의 JOBS에 정의한다 */
+export type JobId =
+  | 'warrior'
+  | 'archer'
+  | 'mage'
+  | 'cleric'
+  | 'rogue'
+  | 'blacksmith'
+  | 'tailor'
+  | 'alchemist'
+  | 'cook'
+  | 'merchant'
+  | 'appraiser';
+
+/** 길드 기술 분야. 같은 분야 직업 레벨의 합계와 최고 레벨이 길드 역량이 된다 */
+export type TrackId = 'combat' | 'smithing' | 'tailoring' | 'alchemy' | 'cooking' | 'commerce' | 'appraisal';
+
+export type Slot = 'weapon' | 'armor' | 'accessory';
+
+/** 길드 역량 조건. 분야 또는 특정 직업의 레벨 합계와 최고 레벨 */
+export interface Requirement {
+  track?: TrackId;
+  job?: JobId;
+  total: number;
+  max: number;
+}
+
 /** 히스토리에 남는 사건 태그. 누적 횟수가 스킬과 성장을 결정한다. */
 export type Tag =
   | 'quest_clear'
@@ -16,6 +43,7 @@ export type Tag =
   | 'saved_ally'
   | 'first_strike'
   | 'solo_survivor'
+  | 'heal'
   | 'breakthrough';
 
 export interface HistoryEntry {
@@ -40,6 +68,10 @@ export interface Member {
   tagCounts: Partial<Record<Tag, number>>;
   /** 이 날짜 전까지 부상으로 출전 불가 */
   injuredUntil: number;
+  job: JobId;
+  jobLevel: number;
+  jobExp: number;
+  equip: Partial<Record<Slot, string>>;
 }
 
 export interface EnemyTemplate {
@@ -60,16 +92,24 @@ export interface Quest {
   rewardGold: number;
   rewardExp: number;
   enemies: EnemyTemplate[];
+  /** 수주 조건 */
+  reqs: Requirement[];
+  /** 성공 시 얻을 수 있는 재료 */
+  drops: string[];
 }
 
 export interface GuildState {
-  version: 1;
+  version: 2;
   name: string;
   day: number;
   gold: number;
   members: Member[];
   quests: Quest[];
   log: string[];
+  /** 재료와 아이템 보유 수 */
+  items: Record<string, number>;
+  /** 다음 의뢰 한 번에 적용되는 요리 효과 */
+  buff: { name: string; hpMul: number; atkMul: number } | null;
   seed: number;
   nextId: number;
 }

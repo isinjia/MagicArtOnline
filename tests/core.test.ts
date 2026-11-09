@@ -53,13 +53,11 @@ describe('progress', () => {
     expect(m.skills).toContain('unyielding');
   });
 
-  it('길드원 등급에 따라 길드 역량이 늘어난다', () => {
+  it('전투 직업 레벨 합계에 따라 출전 인원이 늘어난다', () => {
     const s = newGame(5);
     expect(guildPower(s.members).partySize).toBe(2);
-    s.members[0].grade = 1;
-    s.members[1].grade = 1;
+    for (const m of s.members.filter((x) => x.job === 'warrior' || x.job === 'archer')) m.jobLevel = 3;
     expect(guildPower(s.members).partySize).toBe(3);
-    expect(guildPower(s.members).maxQuestRank).toBe(2);
   });
 });
 

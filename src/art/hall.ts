@@ -231,11 +231,13 @@ export class GuildHall {
     const ids = new Set(members.map((m) => m.id));
     for (const id of this.walkers.keys()) if (!ids.has(id)) this.walkers.delete(id);
     for (const m of members) {
-      const key = `${m.name}:${JSON.stringify(m.stats)}`;
+      const key = `${m.name}:${m.job}`;
       const w = this.walkers.get(m.id);
       if (!w) {
         const [gx, gy] = this.randomFree();
-        this.walkers.set(m.id, { id: m.id, gx, gy, tx: gx, ty: gy, wait: Math.random() * 20, flip: Math.random() < 0.5, view: 'quarter', bubble: '', bubbleT: 0, sprites: new Map(), member: m, key });
+        const [tx, ty] = this.randomFree();
+        // 처음부터 바로 돌아다니게 목적지를 정해 둔다
+        this.walkers.set(m.id, { id: m.id, gx, gy, tx, ty, wait: Math.random() * 6, flip: Math.random() < 0.5, view: 'quarter', bubble: '', bubbleT: 0, sprites: new Map(), member: m, key });
       } else {
         w.member = m;
         if (w.key !== key) {

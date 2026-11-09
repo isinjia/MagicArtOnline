@@ -3,6 +3,8 @@ import type { BattleResult, MemberRecord } from './battle';
 import { RANK_EXP, STAT_KEYS, STAT_LABEL } from './data';
 import { createMember, rankName, refillQuests } from './gen';
 import { guildPower } from './guild';
+import { addDrops, ITEMS } from './items';
+import { addJobExp, isCombatJob, JOBS } from './jobs';
 import type { Rng } from './rng';
 import { meetsSkill, SKILLS } from './skills';
 import type { StoryGenerator } from './story';
@@ -17,12 +19,15 @@ export interface MemberOutcome {
   newSkills: string[];
   breakthrough?: string;
   injuredDays: number;
+  /** 직업 레벨이 올랐다면 새 레벨 */
+  jobUp?: number;
 }
 
 export interface QuestOutcome {
   questName: string;
   win: boolean;
   gold: number;
+  drops: Record<string, number>;
   members: MemberOutcome[];
 }
 
@@ -37,6 +42,7 @@ function tagsOf(r: MemberRecord, win: boolean): Tag[] {
   if (r.down) tags.push('down');
   if (r.firstStrike) tags.push('first_strike');
   if (r.soloSurvivor) tags.push('solo_survivor');
+  for (let i = 0; i < r.heals; i++) tags.push('heal');
   return tags;
 }
 
@@ -50,6 +56,7 @@ const TAG_STAT: Partial<Record<Tag, StatKey>> = {
   saved_ally: 'body',
   first_strike: 'agility',
   boss_kill: 'will',
+  heal: 'will',
 };
 
 function grow(m: Member, tags: Tag[], rng: Rng): Partial<Record<StatKey, number>> {
@@ -120,10 +127,14 @@ export async function applyQuest(
       m.history.push({ day, title: `승급: ${breakthrough}등급`, text: `길드 심사를 통과해 ${breakthrough}등급 모험가가 되었다.`, tags: ['breakthrough'] });
     }
 
-    const injuredDays = r.down ? 2 + quest.rank : 0;
+    // 전투계 직업은 의뢰로 직업 경험치를 얻는다
+    let jobUp: number | undefined;
+    if (isCombatJob(m.job) && addJobExp(m, quest.rewardExp * (result.win ? 0.6 : 0.25))) jobUp = m.jobLevel;
+
+    const injuredDays = r.down ? Math.max(1, 2 + quest.rank - (power.has('firstaid') ? 1 : 0)) : 0;
     if (injuredDays) m.injuredUntil = day + quest.days + injuredDays;
 
-    outcomes.push({ memberId: m.id, name: m.name, story, expGained, statUps, newSkills, breakthrough, injuredDays });
+    outcomes.push({ memberId: m.id, name: m.name, story, expGained, statUps, newSkills, breakthrough, injuredDays, jobUp });
   }
 
   let gold = 0;
@@ -134,18 +145,35 @@ export async function applyQuest(
     gold = Math.round(gold);
   }
   state.gold += gold;
+
+  // 전리품: 도적과 보물 감각이 있으면 더 많이, 우두머리는 미감정 유물을 남긴다
+  const drops: Record<string, number> = {};
+  if (result.win) {
+    let rolls = 1 + quest.rank + party.filter((m) => m.job === 'rogue').length + (power.has('treasure') ? 1 : 0);
+    while (rolls-- > 0) {
+      const item = rng.pick(quest.drops);
+      drops[item] = (drops[item] ?? 0) + rng.int(1, 2);
+    }
+    if (quest.enemies.some((e) => e.boss)) drops.relic = 1;
+    addDrops(state, drops);
+    for (const m of state.members.filter((x) => x.job === 'appraiser')) addJobExp(m, 4);
+  }
+
   state.day += quest.days;
   state.quests = state.quests.filter((q) => q.id !== quest.id);
-  refillQuests(state, rng, guildPower(state.members).maxQuestRank);
+  refillQuests(state, rng);
 
   const names = party.map((m) => m.name).join(', ');
   state.log.unshift(`${day}일차. ${names} → ${quest.name}: ${result.win ? `성공, 금화 ${gold}` : '실패'}.`);
   for (const o of outcomes) {
+    if (o.jobUp) state.log.unshift(`${day}일차. ${o.name}, ${JOBS[party.find((m) => m.id === o.memberId)!.job].name} Lv${o.jobUp} 달성.`);
     if (o.breakthrough) state.log.unshift(`${day}일차. ${o.name}, ${o.breakthrough}등급 승급.`);
     for (const s of o.newSkills) state.log.unshift(`${day}일차. ${o.name}, ${s} 습득.`);
   }
   state.seed = rng.seed;
-  return { questName: quest.name, win: result.win, gold, members: outcomes };
+  const dropText = Object.entries(drops).map(([k, n]) => `${ITEMS[k].name} ${n}`).join(', ');
+  if (dropText) state.log.unshift(`${day}일차. 전리품: ${dropText}.`);
+  return { questName: quest.name, win: result.win, gold, drops, members: outcomes };
 }
 
 export function recruit(state: GuildState, rng: Rng): Member | null {
@@ -154,7 +182,7 @@ export function recruit(state: GuildState, rng: Rng): Member | null {
   state.gold -= cost;
   const m = createMember(state, rng);
   state.members.push(m);
-  state.log.unshift(`${state.day}일차. ${josa(m.name, '을', '를')} 길드원으로 맞이했다.`);
+  state.log.unshift(`${state.day}일차. ${JOBS[m.job].name} ${josa(m.name, '을', '를')} 길드원으로 맞이했다.`);
   state.seed = rng.seed;
   return m;
 }

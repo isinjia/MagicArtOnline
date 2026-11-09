@@ -224,6 +224,14 @@ class BattleScene extends Phaser.Scene {
       case 'intercept':
         this.float(ev.actor, '감싸기!', '#5cbf4a', 36);
         return 700;
+      case 'heal': {
+        const t = this.views.get(ev.target)!;
+        this.float(ev.target, `+${ev.amount}`, '#7ef0a0', 42);
+        this.setHp(ev.target, ev.hpAfter);
+        t.body.setTint(0xb8ffb8);
+        this.time.delayedCall(200 / this.speed, () => t.body.clearTint());
+        return 650;
+      }
       case 'endure':
         this.float(ev.actor, '버텼다!', '#ffcf3f', 40);
         return 800;
@@ -245,7 +253,7 @@ class BattleScene extends Phaser.Scene {
     const events = this.battle.result.events;
     for (; this.index < events.length; this.index++) {
       const ev = events[this.index];
-      if (ev.kind === 'attack' && !ev.dodged) this.setHp(ev.target, ev.hpAfter);
+      if ((ev.kind === 'attack' && !ev.dodged) || ev.kind === 'heal') this.setHp(ev.target, ev.hpAfter);
       if (ev.kind === 'down') {
         const v = this.views.get(ev.actor)!;
         v.down = true;

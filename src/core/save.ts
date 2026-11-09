@@ -1,13 +1,13 @@
 import type { GuildState } from './types';
 
-const KEY = 'magicartonline-save-v1';
+const KEY = 'magicartonline-save-v2';
 
 export function loadGame(): GuildState | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as GuildState;
-    return s.version === 1 ? s : null;
+    return s.version === 2 ? s : null;
   } catch {
     return null;
   }
