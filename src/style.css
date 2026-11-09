@@ -179,3 +179,30 @@ main { background: var(--cream); border-top: var(--px) solid var(--ink); margin:
 .slot { padding: 6px 10px; display: grid; gap: 4px; }
 .exp.job div { background: var(--green); }
 nav button { font-size: 12px; }
+
+/* 시설, 제작, 전직 */
+.busy { color: var(--blue); font-size: 12px; font-weight: 700; }
+.fac { padding: 8px 10px; display: grid; gap: 4px; }
+.fac.unbuilt { background: var(--cream-2); }
+.fac .next { border-top: 2px dashed var(--cream-2); padding-top: 6px; display: grid; gap: 4px; }
+.recipes { display: grid; gap: 6px; border-top: 2px dashed var(--cream-2); padding-top: 6px; }
+.recipe { background: var(--paper); border: 2px solid var(--cream-2); padding: 6px 8px; display: grid; gap: 4px; }
+.recipe.locked { opacity: 0.6; }
+.jclist { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.jc { background: var(--paper); border: 2px solid var(--ink); padding: 6px; display: grid; gap: 2px; font-size: 12px; }
+.jc.locked { opacity: 0.55; }
+
+/* 월드맵 */
+.map { position: relative; padding: 0; line-height: 0; overflow: hidden; flex-shrink: 0; }
+.map canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.qmark, .tlabel, .slabel, .home { position: absolute; transform: translate(-50%, -100%); line-height: 1.2; font-family: var(--font); white-space: nowrap; }
+.qmark { font-weight: 700; font-size: 12px; color: #fff; text-shadow: 1px 1px 0 var(--ink); border: 2px solid var(--ink); padding: 1px 5px; cursor: pointer; }
+.qmark.no { filter: grayscale(1); opacity: 0.7; cursor: default; }
+.qmark::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -3px; border: 3px solid transparent; border-top-color: var(--ink); }
+.home { transform: translate(-50%, 0); font-size: 11px; background: var(--gold); border: 2px solid var(--ink); padding: 0 4px; }
+.tlabel { transform: translate(-50%, 0); font-size: 12px; font-weight: 700; background: var(--paper); border: 2px solid var(--ink); padding: 1px 5px; cursor: pointer; }
+.tlabel.on { background: var(--gold); }
+.slabel { transform: translate(-50%, 0); font-size: 9px; color: #fff; text-shadow: 1px 1px 0 var(--ink), -1px 0 0 var(--ink), 0 -1px 0 var(--ink); pointer-events: none; }
+.perks { margin: 4px 0; padding-left: 18px; line-height: 1.6; }
+.name-input { font: inherit; font-size: 15px; padding: 8px; border: var(--px) solid var(--ink); background: var(--paper); width: 100%; }
+.hud .name small { display: block; font-size: 10px; color: var(--muted); font-weight: 400; }

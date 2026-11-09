@@ -1,7 +1,9 @@
+import { facilityLevel, FACILITIES } from './facilities';
 import { addJobExp, JOBS, levelOf, meetsAll, trackLevels } from './jobs';
 import { josa } from './josa';
 import type { Rng } from './rng';
-import type { GuildState, Member, Requirement, Slot, StatKey, Stats, TrackId } from './types';
+import { TOWNS } from './world';
+import type { FacilityId, GuildState, Member, Requirement, Slot, StatKey, Stats, TrackId } from './types';
 
 export type ItemKind = 'material' | 'gear' | 'potion' | 'food' | 'relic';
 
@@ -57,48 +59,55 @@ export interface Recipe {
   id: string;
   item: string;
   track: TrackId;
+  /** 길드 분야 합계 조건. 최고 레벨 조건은 맡은 장인 본인의 레벨로 따진다 */
   req: Requirement[];
+  facility: FacilityId;
+  facilityLevel: number;
   mats: Record<string, number>;
   gold: number;
   days: number;
 }
 
-const r = (id: string, track: TrackId, total: number, max: number, mats: Record<string, number>, gold: number, days: number): Recipe => ({
+const TRACK_FACILITY: Partial<Record<TrackId, FacilityId>> = { smithing: 'forge', tailoring: 'loom', alchemy: 'lab', cooking: 'kitchen' };
+
+const r = (id: string, track: TrackId, total: number, max: number, fac: number, mats: Record<string, number>, gold: number, days: number): Recipe => ({
   id,
   item: id,
   track,
   req: [{ track, total, max }],
+  facility: TRACK_FACILITY[track]!,
+  facilityLevel: fac,
   mats,
   gold,
   days,
 });
 
-/** 제작법. 분야 레벨 합계와 최고 레벨이 모두 맞아야 만들 수 있다 */
+/** 제작법: 분야 합계, 장인 레벨, 시설 레벨이 모두 맞아야 만들 수 있다 */
 export const RECIPES: Recipe[] = [
-  r('iron_sword', 'smithing', 1, 1, { iron: 2 }, 20, 1),
-  r('iron_armor', 'smithing', 2, 1, { iron: 3, leather: 1 }, 30, 1),
-  r('steel_sword', 'smithing', 6, 2, { iron: 4, manastone: 1 }, 60, 2),
-  r('knight_armor', 'smithing', 10, 3, { iron: 6, leather: 2, manastone: 1 }, 100, 2),
-  r('mithril_sword', 'smithing', 18, 5, { iron: 8, manastone: 4 }, 250, 3),
-  r('leather_gloves', 'tailoring', 1, 1, { leather: 2 }, 15, 1),
-  r('travel_cloak', 'tailoring', 4, 2, { leather: 3, silk: 1 }, 30, 1),
-  r('mage_robe', 'tailoring', 6, 2, { silk: 3, manastone: 1 }, 50, 2),
-  r('silver_robe', 'tailoring', 12, 4, { silk: 6, manastone: 3 }, 150, 3),
-  r('potion', 'alchemy', 1, 1, { herb: 2 }, 5, 1),
-  r('awaken', 'alchemy', 4, 2, { herb: 3, manastone: 1 }, 30, 1),
-  r('elixir', 'alchemy', 10, 4, { herb: 5, manastone: 3 }, 120, 2),
-  r('lunch', 'cooking', 1, 1, { meat: 2, herb: 1 }, 5, 1),
-  r('feast', 'cooking', 6, 3, { meat: 4, herb: 2, manastone: 1 }, 40, 1),
+  r('iron_sword', 'smithing', 1, 1, 1, { iron: 2 }, 20, 1),
+  r('iron_armor', 'smithing', 2, 1, 1, { iron: 3, leather: 1 }, 30, 1),
+  r('steel_sword', 'smithing', 6, 2, 2, { iron: 4, manastone: 1 }, 60, 2),
+  r('knight_armor', 'smithing', 10, 3, 2, { iron: 6, leather: 2, manastone: 1 }, 100, 2),
+  r('mithril_sword', 'smithing', 18, 5, 3, { iron: 8, manastone: 4 }, 250, 3),
+  r('leather_gloves', 'tailoring', 1, 1, 1, { leather: 2 }, 15, 1),
+  r('travel_cloak', 'tailoring', 4, 2, 1, { leather: 3, silk: 1 }, 30, 1),
+  r('mage_robe', 'tailoring', 6, 2, 2, { silk: 3, manastone: 1 }, 50, 2),
+  r('silver_robe', 'tailoring', 12, 4, 3, { silk: 6, manastone: 3 }, 150, 3),
+  r('potion', 'alchemy', 1, 1, 1, { herb: 2 }, 5, 1),
+  r('awaken', 'alchemy', 4, 2, 2, { herb: 3, manastone: 1 }, 30, 1),
+  r('elixir', 'alchemy', 10, 4, 3, { herb: 5, manastone: 3 }, 120, 2),
+  r('lunch', 'cooking', 1, 1, 1, { meat: 2, herb: 1 }, 5, 1),
+  r('feast', 'cooking', 6, 3, 2, { meat: 4, herb: 2, manastone: 1 }, 40, 1),
 ];
 
-/** 상점에서 살 수 있는 재료. 상업 레벨로 품목이 열린다 */
-export const SHOP: { item: string; req: Requirement[] }[] = [
-  { item: 'herb', req: [{ track: 'commerce', total: 1, max: 1 }] },
-  { item: 'meat', req: [{ track: 'commerce', total: 2, max: 1 }] },
-  { item: 'iron', req: [{ track: 'commerce', total: 3, max: 1 }] },
-  { item: 'leather', req: [{ track: 'commerce', total: 3, max: 1 }] },
-  { item: 'silk', req: [{ track: 'commerce', total: 6, max: 2 }] },
-  { item: 'manastone', req: [{ track: 'commerce', total: 10, max: 3 }] },
+/** 상점에서 살 수 있는 재료. 상점 카운터 레벨과 상업 레벨로 품목이 열린다 */
+export const SHOP: { item: string; counter: number; req: Requirement[] }[] = [
+  { item: 'herb', counter: 1, req: [{ track: 'commerce', total: 1, max: 1 }] },
+  { item: 'meat', counter: 1, req: [{ track: 'commerce', total: 2, max: 1 }] },
+  { item: 'iron', counter: 1, req: [{ track: 'commerce', total: 3, max: 1 }] },
+  { item: 'leather', counter: 1, req: [{ track: 'commerce', total: 3, max: 1 }] },
+  { item: 'silk', counter: 2, req: [{ track: 'commerce', total: 6, max: 2 }] },
+  { item: 'manastone', counter: 3, req: [{ track: 'commerce', total: 10, max: 3 }] },
 ];
 
 export const APPRAISE_REQ: Requirement[] = [{ track: 'appraisal', total: 1, max: 1 }];
@@ -122,29 +131,61 @@ export function effectiveStats(m: Member): Stats {
   return s;
 }
 
+/** 길드 차원의 조건: 분야 합계, 시설, 금화, 재료 (장인은 따로 고른다) */
 export function canCraft(state: GuildState, rc: Recipe): { ok: boolean; why?: string } {
-  if (!meetsAll(state.members, rc.req)) return { ok: false, why: '기술 부족' };
+  const req = rc.req[0];
+  if (levelOf(state.members, req).total < req.total) return { ok: false, why: '분야 합계 부족' };
+  if (facilityLevel(state, rc.facility) < rc.facilityLevel) return { ok: false, why: `${FACILITIES[rc.facility].name} Lv${rc.facilityLevel} 필요` };
   if (state.gold < rc.gold) return { ok: false, why: '금화 부족' };
   for (const [k, n] of Object.entries(rc.mats)) if (count(state, k) < n) return { ok: false, why: '재료 부족' };
   return { ok: true };
 }
 
-/** 해당 분야 장인 모두가 함께 만들고 직업 경험치를 나눠 받는다 */
-export function craft(state: GuildState, rc: Recipe): string[] {
-  if (!canCraft(state, rc).ok) return [];
+/** 이 제작을 맡을 수 있는 장인: 같은 분야, 레벨 조건 충족, 부상도 작업도 없는 사람 */
+export function artisansFor(state: GuildState, rc: Recipe): Member[] {
+  return state.members.filter(
+    (m) => JOBS[m.job].track === rc.track && m.jobLevel >= rc.req[0].max && m.injuredUntil <= state.day && !state.orders.some((o) => o.memberId === m.id),
+  );
+}
+
+/** 장인 한 명에게 제작을 맡긴다. 재료와 금화는 바로 쓰고, 며칠 뒤에 완성된다 */
+export function startOrder(state: GuildState, rc: Recipe, m: Member): boolean {
+  if (!canCraft(state, rc).ok || !artisansFor(state, rc).includes(m)) return false;
   state.gold -= rc.gold;
   for (const [k, n] of Object.entries(rc.mats)) addItem(state, k, -n);
-  addItem(state, rc.item, 1);
-  state.day += rc.days;
-  const tier = rc.req[0].max;
-  const lines = [`${state.day - rc.days}일차. ${josa(ITEMS[rc.item].name, '을', '를')} 만들었다.`];
-  for (const m of state.members.filter((x) => JOBS[x.job].track === rc.track)) {
-    const ups = addJobExp(m, 12 + tier * 8);
-    m.exp += 3 + tier * 2;
-    if (ups) lines.push(`${state.day - rc.days}일차. ${m.name}, ${JOBS[m.job].name} Lv${m.jobLevel} 달성.`);
+  state.orders.push({ id: `o${state.nextId++}`, memberId: m.id, recipeId: rc.id, doneDay: state.day + rc.days });
+  state.log.unshift(`${state.day}일차. ${m.name}에게 ${josa(ITEMS[rc.item].name, '을', '를')} 맡겼다. ${rc.days}일 뒤 완성.`);
+  return true;
+}
+
+/** 날이 지나 끝난 주문을 완성한다. 맡은 장인만 직업 경험치를 받는다 */
+export function completeOrders(state: GuildState): string[] {
+  const done: string[] = [];
+  for (const o of [...state.orders]) {
+    if (o.doneDay > state.day) continue;
+    state.orders = state.orders.filter((x) => x !== o);
+    const rc = RECIPES.find((x) => x.id === o.recipeId)!;
+    const m = state.members.find((x) => x.id === o.memberId);
+    addItem(state, rc.item, 1);
+    let line = `${o.doneDay}일차. ${ITEMS[rc.item].name} 완성`;
+    if (m) {
+      const tier = rc.req[0].max;
+      const ups = addJobExp(m, 20 + tier * 15);
+      m.exp += 4 + tier * 3;
+      line += ` (${m.name})`;
+      if (ups) state.log.unshift(`${o.doneDay}일차. ${m.name}, ${JOBS[m.job].name} Lv${m.jobLevel} 달성.`);
+      m.history.push({ day: o.doneDay, title: `제작: ${ITEMS[rc.item].name}`, text: `${JOBS[m.job].name}의 손으로 ${josa(ITEMS[rc.item].name, '을', '를')} 완성했다.`, tags: [] });
+    }
+    state.log.unshift(line + '.');
+    done.push(ITEMS[rc.item].name);
   }
-  state.log.unshift(...lines.reverse());
-  return lines;
+  return done;
+}
+
+/** 시간을 보낸다. 제작 주문이 완성된다 */
+export function passDays(state: GuildState, n: number): string[] {
+  state.day += n;
+  return completeOrders(state);
 }
 
 function commerce(state: GuildState) {
@@ -153,12 +194,12 @@ function commerce(state: GuildState) {
 
 export function buyPrice(state: GuildState, item: string): number {
   const c = commerce(state);
-  return Math.round(ITEMS[item].value * (1 - Math.min(0.3, c.total * 0.02)));
+  return Math.round(ITEMS[item].value * (1 - Math.min(0.3, c.total * 0.02)) * TOWNS[state.town].buyMul);
 }
 
 export function sellPrice(state: GuildState, item: string): number {
   const c = commerce(state);
-  return Math.round(ITEMS[item].value * (0.5 + Math.min(0.4, c.total * 0.03)));
+  return Math.round(ITEMS[item].value * (0.5 + Math.min(0.4, c.total * 0.03)) * TOWNS[state.town].sellMul);
 }
 
 function merchantExp(state: GuildState, gold: number): void {
@@ -171,7 +212,7 @@ function merchantExp(state: GuildState, gold: number): void {
 export function buy(state: GuildState, item: string): boolean {
   const entry = SHOP.find((s) => s.item === item);
   const price = buyPrice(state, item);
-  if (!entry || !meetsAll(state.members, entry.req) || state.gold < price) return false;
+  if (!entry || facilityLevel(state, 'counter') < entry.counter || !meetsAll(state.members, entry.req) || state.gold < price) return false;
   state.gold -= price;
   addItem(state, item, 1);
   merchantExp(state, price);
@@ -189,11 +230,12 @@ export function sell(state: GuildState, item: string): boolean {
 
 /** 유물 감정: 감정 최고 레벨이 높을수록 희귀 장비가 나올 확률이 오른다 */
 export function appraise(state: GuildState, rng: Rng): string | null {
-  if (count(state, 'relic') <= 0 || !meetsAll(state.members, APPRAISE_REQ)) return null;
+  const desk = facilityLevel(state, 'appraisal_desk');
+  if (count(state, 'relic') <= 0 || desk < 1 || !meetsAll(state.members, APPRAISE_REQ)) return null;
   const lv = levelOf(state.members, APPRAISE_REQ[0]);
   addItem(state, 'relic', -1);
   let result: string;
-  if (rng.chance(0.2 + lv.max * 0.1)) {
+  if (rng.chance(0.2 + lv.max * 0.1 + (desk >= 2 ? 0.1 : 0))) {
     const item = rng.pick(['ancient_ring', 'hero_sword', 'guardian_armor']);
     addItem(state, item, 1);
     result = `미감정 유물의 정체는 ${josa(ITEMS[item].name, '이었다', '였다')}!`;

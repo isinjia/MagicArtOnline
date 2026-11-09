@@ -1,4 +1,5 @@
-import type { GuildState, Member } from '../core/types';
+import { RECIPES } from '../core/items';
+import type { FacilityId, GuildState, Member } from '../core/types';
 import { box, boxOf, INK, makeIso, shade, tile, TW } from './iso';
 import { drawMember, type Frame, SPRITE_H, SPRITE_W, type View } from './sprites';
 
@@ -36,34 +37,29 @@ interface Walker {
 
 const BUBBLES = ['!', '♪', '…', '?', '★'];
 
-function furniture(): Furniture[] {
-  const wood = '#b97a45';
+const WOODC = '#b97a45';
+
+/** 늘 있는 장식 가구 */
+function decor(): Furniture[] {
   return [
-    // 접수대
-    { gx: 4, gy: 1, w: 3, d: 1, draw: (g) => box(g, iso, 4, 1, 3, 1, 9, { top: '#e0b07a', left: wood, right: shade(wood, -35) }) },
-    // 책장
     {
       gx: 0, gy: 2, w: 1, d: 2,
       draw: (g) => {
         box(g, iso, 0, 2, 1, 2, 26, boxOf('#8a5530'));
         const colors = ['#c94c4c', '#3b7dd8', '#3fa36b', '#e0962f'];
-        // 앞면에 책등
         for (let r = 0; r < 3; r++) {
           for (let x = 0; x < 10; x++) {
             const a = iso.at(1, 2);
-            const px = a.x - x;
             const py = a.y + x / 2 - 22 + r * 8;
             g.fillStyle = colors[(x + r) % 4];
-            if (x % 3 !== 2) g.fillRect(px - 1, Math.round(py), 1, 5);
+            if (x % 3 !== 2) g.fillRect(a.x - x - 1, Math.round(py), 1, 5);
           }
         }
       },
     },
-    // 탁자와 의자
-    { gx: 3, gy: 4, w: 2, d: 1, draw: (g) => box(g, iso, 3, 4, 2, 1, 8, { top: '#d39a62', left: wood, right: shade(wood, -35) }) },
+    { gx: 3, gy: 4, w: 2, d: 1, draw: (g) => box(g, iso, 3, 4, 2, 1, 8, { top: '#d39a62', left: WOODC, right: shade(WOODC, -35) }) },
     { gx: 2, gy: 4, w: 1, d: 1, draw: (g) => box(g, iso, 2.25, 4.25, 0.5, 0.5, 5, boxOf('#8a5530')) },
     { gx: 5, gy: 4, w: 1, d: 1, draw: (g) => box(g, iso, 5.25, 4.25, 0.5, 0.5, 5, boxOf('#8a5530')) },
-    // 술통
     {
       gx: 7, gy: 0, w: 1, d: 1,
       draw: (g) => {
@@ -74,20 +70,102 @@ function furniture(): Furniture[] {
         g.fillRect(p.x - 8, p.y - 4, 16, 1);
       },
     },
-    // 화분
     {
       gx: 0, gy: 7, w: 1, d: 1,
       draw: (g) => {
         box(g, iso, 0.25, 7.25, 0.5, 0.5, 5, boxOf('#c9643a'));
         const p = iso.at(0.5, 7.5);
+        g.fillStyle = INK;
+        g.fillRect(p.x - 5, p.y - 16, 10, 10);
         g.fillStyle = '#3fa36b';
-        g.fillRect(p.x - 4, p.y - 14, 8, 8);
+        g.fillRect(p.x - 4, p.y - 15, 8, 8);
         g.fillStyle = '#5cbf4a';
         g.fillRect(p.x - 3, p.y - 15, 4, 4);
-        g.fillStyle = INK;
-        g.fillRect(p.x - 5, p.y - 14, 1, 7);
-        g.fillRect(p.x + 4, p.y - 14, 1, 7);
-        g.fillRect(p.x - 4, p.y - 16, 8, 1);
+      },
+    },
+  ];
+}
+
+interface FacilitySpot extends Furniture {
+  id: FacilityId;
+  /** 장인이 일할 때 서는 칸 */
+  work: [number, number];
+}
+
+/** 시설은 지었을 때만 나타난다 */
+function facilitySpots(): FacilitySpot[] {
+  const dot = (g: CanvasRenderingContext2D, gx: number, gy: number, dx: number, dy: number, w: number, h: number, c: string) => {
+    const p = iso.at(gx, gy);
+    g.fillStyle = c;
+    g.fillRect(p.x + dx, p.y + dy, w, h);
+  };
+  return [
+    {
+      id: 'forge', gx: 0, gy: 5, w: 1, d: 2, work: [1, 5],
+      draw: (g) => {
+        box(g, iso, 0, 5, 1, 2, 18, boxOf('#7d7f8c'));
+        dot(g, 1, 6, -9, -12, 6, 6, INK);
+        dot(g, 1, 6, -8, -11, 4, 4, '#ff8a2a');
+        dot(g, 1, 6, -7, -10, 2, 2, '#ffd23f');
+        dot(g, 0.5, 5.2, -1, -24, 2, 4, '#9a9a9a');
+      },
+    },
+    {
+      id: 'lab', gx: 1, gy: 0, w: 2, d: 1, work: [2, 1],
+      draw: (g) => {
+        box(g, iso, 1, 0, 2, 1, 8, { top: '#e0b07a', left: WOODC, right: shade(WOODC, -35) });
+        dot(g, 1.6, 0.5, -1, -15, 3, 5, INK);
+        dot(g, 1.6, 0.5, 0, -13, 1, 2, '#5cdf6a');
+        dot(g, 2.3, 0.5, -1, -14, 3, 4, INK);
+        dot(g, 2.3, 0.5, 0, -13, 1, 2, '#d45a9a');
+      },
+    },
+    {
+      id: 'counter', gx: 4, gy: 1, w: 3, d: 1, work: [5, 0],
+      draw: (g) => {
+        box(g, iso, 4, 1, 3, 1, 9, { top: '#e0b07a', left: WOODC, right: shade(WOODC, -35) });
+        dot(g, 5.5, 1.5, -2, -13, 4, 2, '#ffcf3f');
+        dot(g, 5.5, 1.5, -1, -14, 2, 1, '#ffcf3f');
+      },
+    },
+    {
+      id: 'kitchen', gx: 7, gy: 3, w: 1, d: 2, work: [6, 3],
+      draw: (g) => {
+        box(g, iso, 7, 3, 1, 2, 10, boxOf('#5a5d6a'));
+        dot(g, 7.5, 3.6, -3, -15, 7, 4, INK);
+        dot(g, 7.5, 3.6, -2, -14, 5, 2, '#8a8f99');
+        dot(g, 7.5, 3.6, 0, -19, 1, 3, '#ffffff');
+      },
+    },
+    {
+      id: 'loom', gx: 5, gy: 6, w: 1, d: 1, work: [4, 6],
+      draw: (g) => {
+        box(g, iso, 5.1, 6.1, 0.8, 0.8, 14, boxOf('#9a6234'));
+        for (let i = 0; i < 4; i++) dot(g, 5.9, 6.5, -6 + i * 2, -12, 1, 8, ['#c94c4c', '#3b7dd8', '#ffcf3f', '#3fa36b'][i]);
+      },
+    },
+    {
+      id: 'appraisal_desk', gx: 7, gy: 6, w: 1, d: 1, work: [6, 6],
+      draw: (g) => {
+        box(g, iso, 7.1, 6.1, 0.8, 0.8, 8, boxOf('#5a3a1e'));
+        dot(g, 7.5, 6.5, -1, -12, 3, 3, '#7fe3ff');
+      },
+    },
+    {
+      id: 'training', gx: 3, gy: 7, w: 1, d: 1, work: [3, 6],
+      draw: (g) => {
+        box(g, iso, 3.45, 7.45, 0.1, 0.1, 18, boxOf('#7a4a22'));
+        box(g, iso, 3.3, 7.3, 0.4, 0.4, 8, boxOf('#e8c25a'));
+        dot(g, 3.5, 7.5, -3, -26, 6, 5, '#e8c25a');
+        dot(g, 3.5, 7.5, -3, -27, 6, 1, INK);
+      },
+    },
+    {
+      id: 'infirmary', gx: 7, gy: 5, w: 1, d: 1, work: [6, 5],
+      draw: (g) => {
+        box(g, iso, 7.05, 5.05, 0.9, 0.9, 5, { top: '#ffffff', left: '#d0d0d0', right: '#b0b0b0' });
+        dot(g, 7.5, 5.5, -5, -7, 5, 2, '#c94c4c');
+        dot(g, 7.5, 5.5, 1, -7, 4, 2, '#f4f1ea');
       },
     },
   ];
@@ -110,7 +188,9 @@ export class GuildHall {
   private ctx: CanvasRenderingContext2D;
   private walkers = new Map<string, Walker>();
   private bg: HTMLCanvasElement;
-  private furn = furniture();
+  private furn: Furniture[] = [];
+  private spots = facilitySpots();
+  private furnKey = '';
   private blocked = new Set<string>();
   private tick = 0;
   private running = false;
@@ -121,8 +201,19 @@ export class GuildHall {
     this.canvas.height = H;
     this.canvas.className = 'hall';
     this.ctx = this.canvas.getContext('2d')!;
-    for (const f of this.furn) for (let x = f.gx; x < f.gx + f.w; x++) for (let y = f.gy; y < f.gy + f.d; y++) this.blocked.add(`${x},${y}`);
+    this.layout();
     this.bg = this.drawRoom();
+  }
+
+  /** 지은 시설에 맞춰 가구 배치와 막힌 칸을 다시 계산한다 */
+  private layout(): void {
+    const fac = this.getState().facilities;
+    const key = JSON.stringify(fac);
+    if (key === this.furnKey) return;
+    this.furnKey = key;
+    this.furn = [...decor(), ...this.spots.filter((sp) => (fac[sp.id] ?? 0) > 0)];
+    this.blocked.clear();
+    for (const f of this.furn) for (let x = f.gx; x < f.gx + f.w; x++) for (let y = f.gy; y < f.gy + f.d; y++) this.blocked.add(`${x},${y}`);
   }
 
   start(): void {
@@ -250,12 +341,37 @@ export class GuildHall {
 
   private step(): void {
     const state = this.getState();
+    this.layout();
     this.sync(state.members);
     this.tick++;
     const SPEED = 0.125;
     for (const w of this.walkers.values()) {
       const m = state.members.find((x) => x.id === w.id)!;
       if (m.injuredUntil > state.day) continue;
+      // 제작 중이면 자기 시설 앞으로 가서 일한다
+      const order = state.orders.find((o) => o.memberId === m.id);
+      const spot = order ? this.spots.find((sp) => sp.id === RECIPES.find((r) => r.id === order.recipeId)?.facility) : undefined;
+      if (spot && (w.tx !== spot.work[0] || w.ty !== spot.work[1])) {
+        const atSpot = Math.round(w.gx) === spot.work[0] && Math.round(w.gy) === spot.work[1];
+        if (!atSpot) {
+          [w.tx, w.ty] = spot.work;
+          w.wait = 0;
+        }
+      }
+      if (spot && Math.abs(w.gx - spot.work[0]) < 1e-6 && Math.abs(w.gy - spot.work[1]) < 1e-6) {
+        w.dir = undefined;
+        // 시설 쪽을 바라본다
+        const dx = spot.gx + (spot.w - 1) / 2 - spot.work[0];
+        const dy = spot.gy + (spot.d - 1) / 2 - spot.work[1];
+        const dir: [number, number] = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
+        w.view = dir[0] > 0 || dir[1] > 0 ? 'quarter' : 'back';
+        w.flip = dir[1] > 0 || dir[0] < 0;
+        if (this.tick % 12 === 0) {
+          w.bubble = '♪';
+          w.bubbleT = 6;
+        } else if (w.bubbleT > 0) w.bubbleT--;
+        continue;
+      }
       if (w.bubbleT > 0) w.bubbleT--;
       else if (Math.random() < 0.01) {
         w.bubble = BUBBLES[Math.floor(Math.random() * BUBBLES.length)];

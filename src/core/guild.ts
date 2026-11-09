@@ -1,5 +1,5 @@
 import { type LevelStat, trackLevels } from './jobs';
-import type { Member, TrackId } from './types';
+import type { FacilityId, Member, TrackId } from './types';
 
 export interface Perk {
   id: string;
@@ -16,7 +16,7 @@ export interface GuildPower {
 }
 
 /** 보유 길드원 구성에서 길드장이 할 수 있는 일이 결정된다. */
-export function guildPower(members: Member[]): GuildPower {
+export function guildPower(members: Member[], facilities: Partial<Record<FacilityId, number>> = {}): GuildPower {
   const tracks = trackLevels(members);
   const anySkill = (id: string) => members.some((m) => m.skills.includes(id));
 
@@ -36,7 +36,7 @@ export function guildPower(members: Member[]): GuildPower {
   const has = (id: string) => perks.some((p) => p.id === id);
   return {
     // 전투 레벨 합계 6 이상이면 +1, 전투 최고 Lv5 이상이면 +1
-    partySize: Math.min(4, 2 + (tracks.combat.total >= 6 ? 1 : 0) + (tracks.combat.max >= 5 ? 1 : 0)),
+    partySize: Math.min(5, 2 + (tracks.combat.total >= 6 ? 1 : 0) + (tracks.combat.max >= 5 ? 1 : 0) + ((facilities.training ?? 0) >= 3 ? 1 : 0)),
     recruitCost: Math.round(50 * (has('network') ? 0.8 : 1)),
     tracks,
     perks,

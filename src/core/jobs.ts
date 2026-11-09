@@ -1,4 +1,6 @@
-import type { JobId, Member, Requirement, StatKey, TrackId } from './types';
+import { josa } from './josa';
+import { STAT_LABEL } from './data';
+import type { GuildState, JobId, Member, Requirement, StatKey, TrackId } from './types';
 
 export type JobFamily = '전투계' | '생산계' | '상인계';
 
@@ -91,6 +93,52 @@ export function addJobExp(m: Member, amount: number): number {
     ups++;
   }
   return ups;
+}
+
+/** 전직 비용과 능력치 조건 */
+export const JOB_CHANGE_COST = 50;
+export const JOB_NEED: Record<JobId, Partial<Record<StatKey, number>>> = {
+  warrior: { might: 6 },
+  archer: { agility: 6 },
+  mage: { insight: 7 },
+  cleric: { will: 7 },
+  rogue: { agility: 7 },
+  blacksmith: { might: 6 },
+  tailor: { agility: 5 },
+  alchemist: { insight: 6 },
+  cook: { body: 5 },
+  merchant: { will: 5 },
+  appraiser: { insight: 7 },
+};
+
+export function jobNeedText(job: JobId): string {
+  return Object.entries(JOB_NEED[job])
+    .map(([k, v]) => `${STAT_LABEL[k as StatKey]} ${v}`)
+    .join(', ');
+}
+
+export function canChangeJob(state: GuildState, m: Member, job: JobId): { ok: boolean; why?: string } {
+  if (job === m.job) return { ok: false, why: '현재 직업' };
+  if (state.orders.some((o) => o.memberId === m.id)) return { ok: false, why: '작업 중' };
+  for (const [k, v] of Object.entries(JOB_NEED[job])) if (m.stats[k as StatKey] < (v ?? 0)) return { ok: false, why: '능력치 부족' };
+  if (state.gold < JOB_CHANGE_COST) return { ok: false, why: '금화 부족' };
+  return { ok: true };
+}
+
+/** 전직: 지금 직업의 레벨은 기록해 두고, 예전에 했던 직업이면 그 레벨에서 이어간다 */
+export function changeJob(state: GuildState, m: Member, job: JobId): boolean {
+  if (!canChangeJob(state, m, job).ok) return false;
+  state.gold -= JOB_CHANGE_COST;
+  const from = m.job;
+  m.jobRecords[from] = { level: m.jobLevel, exp: m.jobExp };
+  const rec = m.jobRecords[job];
+  m.job = job;
+  m.jobLevel = rec?.level ?? 1;
+  m.jobExp = rec?.exp ?? 0;
+  const text = `${JOBS[from].name}에서 ${josa(JOBS[job].name, '으로', '로')} 전직했다.${rec ? ` 예전 감각이 돌아와 Lv${m.jobLevel}에서 다시 시작한다.` : ''}`;
+  m.history.push({ day: state.day, title: `전직: ${JOBS[job].name}`, text, tags: [] });
+  state.log.unshift(`${state.day}일차. ${m.name}, ${text}`);
+  return true;
 }
 
 export function isCombatJob(job: JobId): boolean {

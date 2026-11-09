@@ -1,4 +1,5 @@
 import { GuildHall } from '../art/hall';
+import { drawWorldMap } from '../art/worldmap';
 import { enemySpriteUrl, memberSpriteUrl } from '../art/sprites';
 import { simulateBattle } from '../core/battle';
 import { RANK_EXP, STAT_KEYS, STAT_LABEL, TRAITS } from '../core/data';
@@ -9,30 +10,35 @@ import {
   appraise,
   buy,
   buyPrice,
+  artisansFor,
   canCraft,
   count,
-  craft,
   effectiveStats,
   equip,
   ITEMS,
+  passDays,
   RECIPES,
   sell,
   sellPrice,
   SHOP,
+  startOrder,
   unequip,
   useItem,
 } from '../core/items';
-import { JOB_EXP, JOB_IDS, JOB_MAX, JOBS, levelOf, meets, meetsAll, reqName, TRACK_IDS, TRACKS } from '../core/jobs';
+import { build, canBuild, FACILITIES, FACILITY_IDS, facilityLevel, memberCap, nextLevel } from '../core/facilities';
+import { canChangeJob, changeJob, JOB_CHANGE_COST, JOB_EXP, JOB_IDS, JOB_MAX, jobNeedText, JOBS, levelOf, meets, meetsAll, reqName, TRACK_IDS, TRACKS } from '../core/jobs';
 import { applyQuest, describeUps, isAvailable, recruit, type QuestOutcome } from '../core/progress';
 import { josa } from '../core/josa';
 import { Rng } from '../core/rng';
 import { clearSave, saveGame } from '../core/save';
 import { SKILL_BY_ID } from '../core/skills';
 import { TemplateStoryGenerator } from '../core/story';
-import type { GuildState, Member, Quest, Requirement, Slot, TrackId } from '../core/types';
+import { MAP_H, MAP_W, siteById, SITES, TOWN_IDS, TOWNS, type TownId } from '../core/world';
+import type { FacilityId, GuildState, JobId, Member, Quest, Requirement, Slot, TrackId } from '../core/types';
 
 type Tab = 'members' | 'quests' | 'craft' | 'shop' | 'log';
 type Screen =
+  | { kind: 'start'; town: TownId | null }
   | { kind: 'guild'; tab: Tab }
   | { kind: 'member'; id: string; back: Tab }
   | { kind: 'assign'; questId: string; picked: string[] }
@@ -44,15 +50,20 @@ const rankBadge = (grade: number) => `<span class="rank r${grade}">${rankName(gr
 const SLOT_LABEL: Record<Slot, string> = { weapon: '무기', armor: '갑옷', accessory: '장신구' };
 
 export class App {
-  private screen: Screen = { kind: 'guild', tab: 'members' };
+  private screen: Screen;
   private resetArmed = false;
   private notice = '';
   private hall: GuildHall;
 
+  private state: GuildState;
+
+  /** 저장이 없으면 월드맵에서 소속 도시를 고르는 화면부터 시작한다 */
   constructor(
     private root: HTMLElement,
-    private state: GuildState,
+    saved: GuildState | null,
   ) {
+    this.state = saved ?? newGame();
+    this.screen = saved ? { kind: 'guild', tab: 'members' } : { kind: 'start', town: null };
     this.hall = new GuildHall(() => this.state);
     root.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
@@ -62,7 +73,7 @@ export class App {
   }
 
   private get power() {
-    return guildPower(this.state.members);
+    return guildPower(this.state.members, this.state.facilities);
   }
 
   private rng(): Rng {
@@ -75,6 +86,17 @@ export class App {
     if (action !== 'reset') this.resetArmed = false;
     if (action !== 'noop') this.notice = '';
     switch (action) {
+      case 'town':
+        this.screen = { kind: 'start', town: arg as TownId };
+        break;
+      case 'found': {
+        if (s.kind !== 'start' || !s.town) break;
+        const input = this.root.querySelector<HTMLInputElement>('#guild-name');
+        const name = (input?.value ?? '').trim().slice(0, 16) || '이름 없는 길드';
+        this.state = newGame(Date.now(), s.town, name);
+        this.screen = { kind: 'guild', tab: 'members' };
+        break;
+      }
       case 'tab':
         this.screen = { kind: 'guild', tab: arg as Tab };
         break;
@@ -101,13 +123,26 @@ export class App {
         if (m) this.notice = `${JOBS[m.job].name} ${josa(m.name, '이', '가')} 들어왔다.`;
         break;
       }
-      case 'rest':
-        st.day++;
-        st.log.unshift(`${st.day - 1}일차. 하루를 쉬며 몸을 추슬렀다.`);
+      case 'rest': {
+        st.log.unshift(`${st.day}일차. 하루를 보냈다.`);
+        const done = passDays(st, 1);
+        this.notice = done.length ? `완성: ${done.join(', ')}` : `${st.day}일차가 되었다.`;
         break;
-      case 'craft': {
-        const rc = RECIPES.find((r) => r.id === arg);
-        if (rc && craft(st, rc).length) this.notice = `${ITEMS[rc.item].name} 완성!`;
+      }
+      case 'order': {
+        const [rid, mid] = arg.split(':');
+        const rc = RECIPES.find((r) => r.id === rid);
+        const m = st.members.find((x) => x.id === mid);
+        if (rc && m && startOrder(st, rc, m)) this.notice = `${m.name}에게 ${josa(ITEMS[rc.item].name, '을', '를')} 맡겼다. ${rc.days}일 뒤 완성.`;
+        break;
+      }
+      case 'build':
+        if (build(st, arg as FacilityId)) this.notice = `${FACILITIES[arg as FacilityId].name} Lv${facilityLevel(st, arg as FacilityId)} 완공!`;
+        break;
+      case 'jobchange': {
+        const [job, mid] = arg.split(':');
+        const m = st.members.find((x) => x.id === mid);
+        if (m && changeJob(st, m, job as JobId)) this.notice = `${m.name}, ${josa(JOBS[m.job].name, '으로', '로')} 전직!`;
         break;
       }
       case 'buy':
@@ -151,11 +186,11 @@ export class App {
         }
         this.resetArmed = false;
         clearSave();
-        this.state = newGame();
-        this.screen = { kind: 'guild', tab: 'members' };
-        break;
+        this.screen = { kind: 'start', town: null };
+        this.render();
+        return;
     }
-    saveGame(this.state);
+    if (this.screen.kind !== 'start') saveGame(this.state);
     this.render();
   }
 
@@ -186,7 +221,8 @@ export class App {
   private render(): void {
     const s = this.screen;
     let body = '';
-    if (s.kind === 'guild') {
+    if (s.kind === 'start') body = this.start(s.town);
+    else if (s.kind === 'guild') {
       const views: Record<Tab, () => string> = {
         members: () => this.members(),
         quests: () => this.quests(),
@@ -201,6 +237,9 @@ export class App {
     else if (s.kind === 'battle') body = '<div id="battle"></div>';
     else body = this.result(s.outcome);
     this.root.innerHTML = body;
+
+    const mapSlot = this.root.querySelector('#map-slot');
+    if (mapSlot) mapSlot.prepend(drawWorldMap());
 
     const slot = this.root.querySelector('#hall-slot');
     if (slot) {
@@ -231,22 +270,24 @@ export class App {
     const buff = this.state.buff ? `<span class="perk">${esc(this.state.buff.name)}</span>` : '';
     return `<header>
       <div class="hud">
-        <div class="win name">${esc(this.state.name)}</div>
+        <div class="win name">${esc(this.state.name)}<small>${esc(TOWNS[this.state.town].name)}</small></div>
         <div class="win"><span class="coin"></span><b>${this.state.gold}</b></div>
         <div class="win"><b>${this.state.day}</b>일차</div>
       </div>
       <div class="hall-wrap" id="hall-slot"></div>
       <div class="power">${tracks}</div>
-      <div class="power"><span>출전 <b>${p.partySize}명</b></span><span>길드원 <b>${this.state.members.length}/8</b></span>${perks}${buff}</div>
+      <div class="power"><span>출전 <b>${p.partySize}명</b></span><span>길드원 <b>${this.state.members.length}/${memberCap(this.state)}</b></span>${perks}${buff}</div>
     </header>`;
   }
 
   private tabs(tab: Tab): string {
     const t = (id: Tab, label: string) => `<button class="${tab === id ? 'on' : ''}" data-act="tab" data-arg="${id}">${label}</button>`;
-    return `<nav>${t('members', '길드원')}${t('quests', '의뢰')}${t('craft', '공방')}${t('shop', '상점')}${t('log', '기록')}</nav>`;
+    return `<nav>${t('members', '길드원')}${t('quests', '의뢰')}${t('craft', '시설')}${t('shop', '상점')}${t('log', '기록')}</nav>`;
   }
 
   private status(m: Member): string {
+    const o = this.state.orders.find((x) => x.memberId === m.id);
+    if (o) return `<span class="busy">작업 ${o.doneDay - this.state.day}일</span>`;
     return isAvailable(this.state, m) ? '<span class="ok">대기</span>' : `<span class="bad">부상 ${m.injuredUntil - this.state.day}일</span>`;
   }
 
@@ -271,11 +312,11 @@ export class App {
   private members(): string {
     const p = this.power;
     const cards = this.state.members.map((m) => `<div class="card win tap" data-act="member" data-arg="${m.id}">${this.memberCard(m)}</div>`).join('');
-    const canRecruit = this.state.gold >= p.recruitCost && this.state.members.length < 8;
+    const canRecruit = this.state.gold >= p.recruitCost && this.state.members.length < memberCap(this.state);
     return `${cards}
       <div class="actions">
         <button class="btn" data-act="recruit" ${canRecruit ? '' : 'disabled'}>모집 ${p.recruitCost}G</button>
-        <button class="btn sub" data-act="rest">하루 쉬기</button>
+        <button class="btn sub" data-act="rest">하루 보내기</button>
       </div>`;
   }
 
@@ -328,12 +369,29 @@ export class App {
           <div class="exp job"><div style="width:${jPct}%"></div></div>
           <div class="muted">직업 EXP ${m.jobExp}${m.jobLevel < JOB_MAX ? ` / ${jNext}` : ' (최고 레벨)'} · ${howToGrow}</div>
         </div>
+        <div class="section">전직</div>${this.jobChange(m)}
         <div class="section">장비</div>${slots}
         ${potions ? `<div class="section">물약</div><div class="chips">${potions}</div>` : ''}
         <div class="section">기질</div>${m.traits.map((t) => `<div class="skill win"><b>${TRAITS[t].name}</b>${TRAITS[t].desc}</div>`).join('')}
         <div class="section">스킬</div>${skills}
         <div class="section">히스토리</div>${history}
       </div>`;
+  }
+
+  private jobChange(m: Member): string {
+    const rows = JOB_IDS.filter((j) => j !== m.job)
+      .map((j) => {
+        const c = canChangeJob(this.state, m, j);
+        const rec = m.jobRecords[j];
+        return `<div class="jc ${c.ok ? '' : 'locked'}">
+          <div><b>${JOBS[j].name}</b> <span class="muted">${JOBS[j].family}${rec ? ` · 예전 Lv${rec.level}` : ''}</span></div>
+          <div class="muted">${jobNeedText(j)}</div>
+          <button class="btn mini" data-act="jobchange" data-arg="${j}:${m.id}" ${c.ok ? '' : 'disabled'}>${c.ok ? `${JOB_CHANGE_COST}G` : c.why}</button>
+        </div>`;
+      })
+      .join('');
+    return `<div class="muted">능력치 조건을 채우면 ${JOB_CHANGE_COST}G로 전직한다. 지금 직업 레벨은 기록되고, 예전 직업으로 돌아가면 그 레벨에서 이어간다.</div>
+      <div class="jclist">${rows}</div>`;
   }
 
   // ---------- 의뢰 ----------
@@ -347,6 +405,7 @@ export class App {
     const reqs = q.reqs.length ? `<div class="chips">${q.reqs.map((r) => this.reqChip(r)).join('')}</div>` : '';
     return `<div class="card win ${ok ? (tappable ? 'tap' : '') : 'locked'}" ${act}>
       <div class="card-head"><span class="nm">${esc(q.name)}</span>${rankBadge(q.rank)}</div>
+      <div class="muted">${esc(siteById(q.placeId)?.name ?? '')} · 왕복 포함 ${q.days}일</div>
       <div>${esc(q.desc)}</div>
       <div class="foes">${foes}</div>
       ${reqs}
@@ -356,7 +415,55 @@ export class App {
 
   private quests(): string {
     const buff = this.state.buff ? `<div class="notice">${esc(this.state.buff.name)} 준비됨: 다음 의뢰에 효과가 난다.</div>` : '';
-    return buff + this.state.quests.map((q) => this.questCard(q)).join('');
+    return buff + this.questMap() + this.state.quests.map((q) => this.questCard(q)).join('');
+  }
+
+  /** 지도 위 좌표를 백분율 위치로 */
+  private pos(p: { x: number; y: number }): string {
+    return `left:${((p.x / MAP_W) * 100).toFixed(2)}%;top:${((p.y / MAP_H) * 100).toFixed(2)}%`;
+  }
+
+  private questMap(): string {
+    const home = TOWNS[this.state.town];
+    const perSite = new Map<string, number>();
+    const marks = this.state.quests
+      .map((q) => {
+        const site = siteById(q.placeId);
+        if (!site) return '';
+        const i = perSite.get(site.id) ?? 0;
+        perSite.set(site.id, i + 1);
+        const ok = meetsAll(this.state.members, q.reqs);
+        return `<button class="qmark r${q.rank} ${ok ? '' : 'no'}" style="${this.pos({ x: site.x + i * 7, y: site.y - 6 })}" ${ok ? `data-act="quest" data-arg="${q.id}"` : ''} title="${esc(q.name)}">${rankName(q.rank)}</button>`;
+      })
+      .join('');
+    return `<div class="map win" id="map-slot">
+      <span class="home" style="${this.pos({ x: home.x, y: home.y + 6 })}">우리 길드</span>
+      ${marks}
+    </div>`;
+  }
+
+  private start(town: TownId | null): string {
+    const labels = TOWN_IDS.map((id) => {
+      const t = TOWNS[id];
+      return `<button class="tlabel ${town === id ? 'on' : ''}" style="${this.pos({ x: t.x, y: t.y + 8 })}" data-act="town" data-arg="${id}">${esc(t.name.split(' ').pop()!)}</button>`;
+    }).join('');
+    const sites = SITES.map((x) => `<span class="slabel" style="${this.pos({ x: x.x, y: x.y + 6 })}">${esc(x.name)}</span>`).join('');
+    const t = town ? TOWNS[town] : null;
+    const detail = t
+      ? `<div class="card win">
+          <div class="card-head"><span class="nm">${esc(t.name)}</span><span class="chip">${esc(t.kind)}</span></div>
+          <div>${esc(t.desc)}</div>
+          <ul class="perks">${t.perks.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
+          <label class="muted" for="guild-name">길드 이름</label>
+          <input id="guild-name" class="name-input" maxlength="16" placeholder="이름 없는 길드" autocomplete="off">
+        </div>`
+      : '<div class="card win"><div>지도에서 길드를 세울 도시를 고르자. 도시마다 모이는 직업과 들어오는 의뢰, 시작 자원이 다르다.</div></div>';
+    return `<div class="topbar"><div class="banner win-c" style="flex:1">Magic Art Online</div></div>
+      <div class="scroll">
+        <div class="map win" id="map-slot">${sites}${labels}</div>
+        ${detail}
+      </div>
+      <div class="bottom"><button class="btn" data-act="found" ${t ? '' : 'disabled'}>${t ? `${esc(t.name.split(' ').pop()!)}에 길드를 세운다` : '도시를 고르자'}</button></div>`;
   }
 
   private assign(questId: string, picked: string[]): string {
@@ -387,40 +494,77 @@ export class App {
   }
 
   private workshop(): string {
-    const p = this.power;
-    const crafts: TrackId[] = ['smithing', 'tailoring', 'alchemy', 'cooking'];
-    const sections = crafts
-      .map((t) => {
-        const l = p.tracks[t];
-        const workers = this.state.members.filter((m) => JOBS[m.job].track === t).map((m) => `${m.name.split(' ')[0]} Lv${m.jobLevel}`).join(', ');
-        const recipes = RECIPES.filter((r) => r.track === t)
-          .map((r) => {
-            const c = canCraft(this.state, r);
-            const locked = !meetsAll(this.state.members, r.req);
-            const mats = Object.entries(r.mats)
-              .map(([k, n]) => `<span class="${count(this.state, k) >= n ? '' : 'bad'}">${ITEMS[k].name} ${count(this.state, k)}/${n}</span>`)
-              .join(' · ');
-            return `<div class="card win ${locked ? 'locked' : ''}">
-              <div class="card-head"><span class="nm">${ITEMS[r.item].name}</span><span class="muted">${ITEMS[r.item].desc}</span></div>
-              <div class="chips">${r.req.map((q) => this.reqChip(q)).join('')}</div>
-              <div class="reward">${mats}<span>${r.gold}G</span><span>${r.days}일</span></div>
-              <button class="btn mini" data-act="craft" data-arg="${r.id}" ${c.ok ? '' : 'disabled'}>${c.ok ? '제작' : c.why}</button>
-            </div>`;
+    const st = this.state;
+    const orders = st.orders.length
+      ? st.orders
+          .map((o) => {
+            const rc = RECIPES.find((r) => r.id === o.recipeId)!;
+            const m = st.members.find((x) => x.id === o.memberId);
+            return `<div class="inv-item win"><b>${ITEMS[rc.item].name}</b><span>${o.doneDay - st.day}일 남음</span><span class="muted">${m ? esc(m.name) : ''}</span></div>`;
           })
-          .join('');
-        return `<div class="section">${TRACKS[t].name} 기술 · 합계 ${l.total} · 최고 Lv${l.max}</div>
-          <div class="muted">${workers ? `장인: ${esc(workers)}` : `장인이 없다. ${josa(JOBS[JOB_IDS.find((j) => JOBS[j].track === t)!].name, '을', '를')} 모집하자.`}</div>
-          ${recipes}`;
-      })
-      .join('');
+          .join('')
+      : '';
     const food = this.inventory(
       (k) => ITEMS[k].kind === 'food',
       (k) => `<button class="btn mini" data-act="use" data-arg="${k}">준비</button>`,
     );
-    return `<div class="muted">같은 분야 장인들의 직업 레벨 합계와 최고 레벨이 조건을 넘으면 만들 수 있다. 만들 때마다 그 분야 장인 모두가 직업 경험치를 얻는다.</div>
+    const facilities = FACILITY_IDS.map((id) => this.facilityCard(id)).join('');
+    return `${orders ? `<div class="section">작업 중</div><div class="inv">${orders}</div>` : ''}
       <div class="section">보관함</div>${this.inventory(() => true)}
-      <div class="section">요리 준비</div>${food}
-      ${sections}`;
+      ${st.items.lunch || st.items.feast ? `<div class="section">요리 준비</div>${food}` : ''}
+      <div class="muted">시설을 짓고 넓히면 만들 수 있는 것이 늘어난다. 제작은 장인 한 명에게 맡긴다. 분야 합계는 길드 전체로, 최고 레벨은 맡은 장인 본인으로 따진다. 맡은 장인은 완성될 때까지 의뢰에 나가지 못한다.</div>
+      ${facilities}`;
+  }
+
+  private facilityCard(id: FacilityId): string {
+    const st = this.state;
+    const def = FACILITIES[id];
+    const lv = facilityLevel(st, id);
+    const next = nextLevel(st, id);
+    const c = canBuild(st, id);
+    const cur = lv ? def.levels.slice(0, lv).map((l) => l.effect).join(' / ') : '아직 없다';
+    const nextInfo = next
+      ? `<div class="next">
+          <div><b>${lv ? `Lv${lv + 1}로 넓히기` : '짓기'}</b> · ${next.effect}</div>
+          ${next.req.length ? `<div class="chips">${next.req.map((r) => this.reqChip(r)).join('')}</div>` : ''}
+          <div class="reward"><span><span class="coin"></span> ${next.gold}G</span>${Object.entries(next.mats)
+            .map(([k, n]) => `<span class="${count(st, k) >= n ? '' : 'bad'}">${ITEMS[k].name} ${count(st, k)}/${n}</span>`)
+            .join('')}</div>
+          <button class="btn mini" data-act="build" data-arg="${id}" ${c.ok ? '' : 'disabled'}>${c.ok ? (lv ? '넓히기' : '짓기') : c.why}</button>
+        </div>`
+      : '';
+    const recipes = lv && def.track ? RECIPES.filter((r) => r.facility === id).map((r) => this.recipeCard(r)).join('') : '';
+    return `<div class="fac win ${lv ? '' : 'unbuilt'}">
+      <div class="card-head"><span class="nm">${def.name}</span>${lv ? `<span class="rank r${Math.min(5, lv + 1)}">Lv${lv}</span>` : '<span class="muted">미건설</span>'}</div>
+      <div class="muted">${def.desc} 현재: ${cur}</div>
+      ${nextInfo}
+      ${recipes ? `<div class="recipes">${recipes}</div>` : ''}
+    </div>`;
+  }
+
+  private recipeCard(r: (typeof RECIPES)[number]): string {
+    const st = this.state;
+    const c = canCraft(st, r);
+    const artisans = c.ok ? artisansFor(st, r) : [];
+    const mats = Object.entries(r.mats)
+      .map(([k, n]) => `<span class="${count(st, k) >= n ? '' : 'bad'}">${ITEMS[k].name} ${count(st, k)}/${n}</span>`)
+      .join('');
+    const req = r.req[0];
+    const l = levelOf(st.members, req);
+    const reqChips = `<span class="req ${l.total >= req.total ? 'ok' : 'no'}">${TRACKS[r.track].name} 합계 ${l.total}/${req.total}</span><span class="req ${l.max >= req.max ? 'ok' : 'no'}">장인 Lv${req.max} 이상</span>${
+      facilityLevel(st, r.facility) < r.facilityLevel ? `<span class="req no">${FACILITIES[r.facility].name} Lv${r.facilityLevel}</span>` : ''
+    }`;
+    const buttons = c.ok
+      ? artisans.length
+        ? artisans.map((m) => `<button class="btn mini" data-act="order" data-arg="${r.id}:${m.id}">${esc(m.name.split(' ')[0])} Lv${m.jobLevel}에게</button>`).join('')
+        : '<span class="bad">맡길 수 있는 장인이 없다</span>'
+      : `<span class="bad">${c.why}</span>`;
+    return `<div class="recipe ${c.ok ? '' : 'locked'}">
+      <div class="card-head"><span class="nm">${ITEMS[r.item].name}</span><span class="muted">${ITEMS[r.item].desc}</span></div>
+      <div class="chips">${reqChips}</div>
+      <div class="reward">${mats}<span>${r.gold}G</span><span>${r.days}일</span></div>
+      <div class="chips">${buttons}</div>
+    </div>`;
   }
 
   // ---------- 상점 ----------
@@ -429,12 +573,13 @@ export class App {
     const st = this.state;
     const c = this.power.tracks.commerce;
     const a = this.power.tracks.appraisal;
+    const counter = facilityLevel(st, 'counter');
     const buyList = SHOP.map((e) => {
-      const ok = meetsAll(st.members, e.req);
+      const ok = counter >= e.counter && meetsAll(st.members, e.req);
       const price = buyPrice(st, e.item);
       return `<div class="card win ${ok ? '' : 'locked'}">
         <div class="card-head"><span class="nm">${ITEMS[e.item].name}</span><span><span class="coin"></span> ${price}G</span></div>
-        <div class="chips">${e.req.map((r) => this.reqChip(r)).join('')}</div>
+        <div class="chips"><span class="req ${counter >= e.counter ? 'ok' : 'no'}">상점 카운터 Lv${e.counter}</span>${e.req.map((r) => this.reqChip(r)).join('')}</div>
         <button class="btn mini" data-act="buy" data-arg="${e.item}" ${ok && st.gold >= price ? '' : 'disabled'}>구입</button>
       </div>`;
     }).join('');
@@ -443,14 +588,15 @@ export class App {
       (k) => `<button class="btn mini sub" data-act="sell" data-arg="${k}">${sellPrice(st, k)}G 판매</button>`,
     );
     const relics = count(st, 'relic');
-    const canAppraise = relics > 0 && meetsAll(st.members, APPRAISE_REQ);
+    const desk = facilityLevel(st, 'appraisal_desk');
+    const canAppraise = relics > 0 && desk > 0 && meetsAll(st.members, APPRAISE_REQ);
     return `<div class="muted">상인의 직업 레벨 합계가 높을수록 싸게 사고 비싸게 판다. 상업 합계 ${c.total} · 최고 Lv${c.max}</div>
       <div class="section">판매</div>${sellList}
       <div class="section">구입</div>${buyList}
       <div class="section">감정</div>
       <div class="card win">
         <div>미감정 유물 ×${relics}. 감정 최고 레벨이 높을수록 희귀 장비가 나올 확률이 오른다. (감정 합계 ${a.total} · 최고 Lv${a.max})</div>
-        <div class="chips">${APPRAISE_REQ.map((r) => this.reqChip(r)).join('')}</div>
+        <div class="chips"><span class="req ${desk > 0 ? 'ok' : 'no'}">감정대</span>${APPRAISE_REQ.map((r) => this.reqChip(r)).join('')}</div>
         <button class="btn mini" data-act="appraise" ${canAppraise ? '' : 'disabled'}>감정하기</button>
       </div>`;
   }

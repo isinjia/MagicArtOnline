@@ -3,7 +3,9 @@ import type { BattleResult, MemberRecord } from './battle';
 import { RANK_EXP, STAT_KEYS, STAT_LABEL } from './data';
 import { createMember, rankName, refillQuests } from './gen';
 import { guildPower } from './guild';
-import { addDrops, ITEMS } from './items';
+import { facilityLevel, memberCap, trainingBonus } from './facilities';
+import { addDrops, ITEMS, passDays } from './items';
+import { TOWNS } from './world';
 import { addJobExp, isCombatJob, JOBS } from './jobs';
 import type { Rng } from './rng';
 import { meetsSkill, SKILLS } from './skills';
@@ -88,7 +90,7 @@ export async function applyQuest(
   storyGen: StoryGenerator,
   rng: Rng,
 ): Promise<QuestOutcome> {
-  const power = guildPower(state.members);
+  const power = guildPower(state.members, state.facilities);
   const day = state.day;
   const outcomes: MemberOutcome[] = [];
 
@@ -116,6 +118,8 @@ export async function applyQuest(
     exp *= 1 + m.stats.insight * 0.02;
     if (m.traits.includes('curious')) exp *= 1.15;
     if (power.has('teaching')) exp *= 1.2;
+    exp *= 1 + trainingBonus(state);
+    exp *= TOWNS[state.town].expMul;
     const expGained = Math.round(exp);
     m.exp += expGained;
 
@@ -129,9 +133,9 @@ export async function applyQuest(
 
     // 전투계 직업은 의뢰로 직업 경험치를 얻는다
     let jobUp: number | undefined;
-    if (isCombatJob(m.job) && addJobExp(m, quest.rewardExp * (result.win ? 0.6 : 0.25))) jobUp = m.jobLevel;
+    if (isCombatJob(m.job) && addJobExp(m, quest.rewardExp * (result.win ? 0.6 : 0.25) * (1 + trainingBonus(state)))) jobUp = m.jobLevel;
 
-    const injuredDays = r.down ? Math.max(1, 2 + quest.rank - (power.has('firstaid') ? 1 : 0)) : 0;
+    const injuredDays = r.down ? Math.max(1, 2 + quest.rank - (power.has('firstaid') ? 1 : 0) - facilityLevel(state, 'infirmary')) : 0;
     if (injuredDays) m.injuredUntil = day + quest.days + injuredDays;
 
     outcomes.push({ memberId: m.id, name: m.name, story, expGained, statUps, newSkills, breakthrough, injuredDays, jobUp });
@@ -159,7 +163,7 @@ export async function applyQuest(
     for (const m of state.members.filter((x) => x.job === 'appraiser')) addJobExp(m, 4);
   }
 
-  state.day += quest.days;
+  passDays(state, quest.days);
   state.quests = state.quests.filter((q) => q.id !== quest.id);
   refillQuests(state, rng);
 
@@ -177,8 +181,8 @@ export async function applyQuest(
 }
 
 export function recruit(state: GuildState, rng: Rng): Member | null {
-  const cost = guildPower(state.members).recruitCost;
-  if (state.gold < cost || state.members.length >= 8) return null;
+  const cost = guildPower(state.members, state.facilities).recruitCost;
+  if (state.gold < cost || state.members.length >= memberCap(state)) return null;
   state.gold -= cost;
   const m = createMember(state, rng);
   state.members.push(m);
@@ -187,6 +191,7 @@ export function recruit(state: GuildState, rng: Rng): Member | null {
   return m;
 }
 
+/** 부상도 아니고 제작 중도 아니어야 의뢰에 나갈 수 있다 */
 export function isAvailable(state: GuildState, m: Member): boolean {
-  return m.injuredUntil <= state.day;
+  return m.injuredUntil <= state.day && !state.orders.some((o) => o.memberId === m.id);
 }
