@@ -1,8 +1,11 @@
 import './style.css';
 import { newGame } from './core/gen';
 import { loadGame, saveGame } from './core/save';
+import { loadFonts } from './fonts';
 import { App } from './ui/app';
 
-const state = loadGame() ?? newGame();
-saveGame(state);
-new App(document.getElementById('app')!, state);
+void loadFonts().then(() => {
+  const state = loadGame() ?? newGame();
+  saveGame(state);
+  new App(document.getElementById('app')!, state);
+});
