@@ -12,6 +12,10 @@ const CREAM = 0xfff6dc;
 
 interface UnitView {
   snap: UnitSnapshot;
+  key: string;
+  /** 공격하거나 쓰러져서 제자리걸음을 멈춘 상태 */
+  busy: boolean;
+  down: boolean;
   body: Phaser.GameObjects.Image;
   bar: Phaser.GameObjects.Rectangle;
   hpText: Phaser.GameObjects.Text;
@@ -94,6 +98,20 @@ class BattleScene extends Phaser.Scene {
       speedBtn.setText(`x${this.speed}`);
     });
 
+    // 대기 중 제자리걸음
+    let step = 0;
+    this.time.addEvent({
+      delay: 260,
+      loop: true,
+      callback: () => {
+        step++;
+        for (const v of this.views.values()) {
+          if (v.busy || v.down) continue;
+          v.body.setTexture(v.key + [0, 1, 0, 2][step % 4]);
+        }
+      },
+    });
+
     this.time.delayedCall(500, () => this.next());
   }
 
@@ -120,13 +138,16 @@ class BattleScene extends Phaser.Scene {
       const k = i - (units.length - 1) / 2;
       const x = cx + k * sx;
       const y = cy + k * sy;
-      const key = `u:${u.uid}`;
+      const key = `u:${u.uid}:`;
       const member = u.memberId ? this.battle.party.find((m) => m.id === u.memberId) : undefined;
-      this.textures.addCanvas(key, member ? drawMember(member) : drawEnemy(u.name, u.boss));
+      // 아군은 뒷모습으로 오른쪽 위의 적을, 적은 앞모습으로 왼쪽 아래의 아군을 본다
+      for (const f of [0, 1, 2] as const) {
+        this.textures.addCanvas(key + f, member ? drawMember(member, 'back', f) : drawEnemy(u.name, u.boss, 'quarter', f));
+      }
       const scale = u.boss ? 9 : 7;
       this.add.rectangle(x, y + 70, 90, 10, 0x2a1d17, 0.25);
       this.add.rectangle(x, y + 70, 60, 20, 0x2a1d17, 0.25);
-      const body = this.add.image(x, y, key).setScale(scale).setOrigin(0.5, 0.6);
+      const body = this.add.image(x, y, key + 0).setScale(scale).setOrigin(0.5, 0.6);
       // 아군은 오른쪽 위(적)를, 적은 왼쪽 아래(아군)를 본다
       if (!ally && !u.name.includes('울프')) body.setFlipX(true);
       body.setDepth(y);
@@ -135,9 +156,7 @@ class BattleScene extends Phaser.Scene {
       this.add.rectangle(x, ny + 34, 108, 20, INK).setOrigin(0.5).setDepth(3000);
       const bar = this.add.rectangle(x - 50, ny + 34, 100, 12, u.side === 'ally' ? 0x5cbf4a : 0xe0524a).setOrigin(0, 0.5).setDepth(3001);
       const hpText = this.add.text(x, ny + 62, `${u.maxHp}/${u.maxHp}`, { fontFamily: FONT, fontSize: '18px', color: '#ffffff', stroke: '#2a1d17', strokeThickness: 4 }).setOrigin(0.5).setDepth(3001);
-      this.views.set(u.uid, { snap: u, body, bar, hpText, x, y });
-      // 대기 중 숨쉬기 (공격 이동과 겹치지 않게 세로 크기만 바꾼다)
-      this.tweens.add({ targets: body, scaleY: scale * 0.92, duration: 300, yoyo: true, repeat: -1, delay: i * 120, ease: 'Stepped', easeParams: [2] });
+      this.views.set(u.uid, { snap: u, key, busy: false, down: false, body, bar, hpText, x, y });
     });
   }
 
@@ -174,7 +193,21 @@ class BattleScene extends Phaser.Scene {
       case 'attack': {
         const a = this.views.get(ev.actor)!;
         const t = this.views.get(ev.target)!;
-        this.tweens.add({ targets: a.body, x: a.x + (t.x - a.x) * 0.4, y: a.y + (t.y - a.y) * 0.4, duration: 150 / this.speed, yoyo: true, ease: 'Stepped', easeParams: [3] });
+        a.busy = true;
+        a.body.setTexture(a.key + 1);
+        this.tweens.add({
+          targets: a.body,
+          x: a.x + (t.x - a.x) * 0.4,
+          y: a.y + (t.y - a.y) * 0.4,
+          duration: 150 / this.speed,
+          yoyo: true,
+          ease: 'Stepped',
+          easeParams: [3],
+          onComplete: () => {
+            a.busy = false;
+            if (!a.down) a.body.setTexture(a.key + 0);
+          },
+        });
         this.time.delayedCall(150 / this.speed, () => {
           if (ev.dodged) {
             this.float(ev.target, 'MISS', '#7fe3ff', 34);
@@ -196,7 +229,8 @@ class BattleScene extends Phaser.Scene {
         return 800;
       case 'down': {
         const v = this.views.get(ev.actor)!;
-        this.tweens.killTweensOf(v.body);
+        v.down = true;
+        v.body.setTexture(v.key + 0);
         this.tweens.add({ targets: v.body, angle: v.snap.side === 'ally' ? -90 : 90, alpha: 0.5, duration: 250 / this.speed, ease: 'Stepped', easeParams: [3] });
         return 600;
       }
@@ -214,8 +248,9 @@ class BattleScene extends Phaser.Scene {
       if (ev.kind === 'attack' && !ev.dodged) this.setHp(ev.target, ev.hpAfter);
       if (ev.kind === 'down') {
         const v = this.views.get(ev.actor)!;
+        v.down = true;
         this.tweens.killTweensOf(v.body);
-        v.body.setAngle(v.snap.side === 'ally' ? -90 : 90).setAlpha(0.5);
+        v.body.setPosition(v.x, v.y).setTexture(v.key + 0).setAngle(v.snap.side === 'ally' ? -90 : 90).setAlpha(0.5);
       }
       if (ev.kind === 'end') {
         this.log(ev.text);

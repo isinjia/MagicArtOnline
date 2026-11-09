@@ -1,6 +1,6 @@
 import type { GuildState, Member } from '../core/types';
 import { box, boxOf, INK, makeIso, shade, tile, TW } from './iso';
-import { drawMember, SPRITE_H, SPRITE_W } from './sprites';
+import { drawMember, type Frame, SPRITE_H, SPRITE_W, type View } from './sprites';
 
 const W = 176;
 const H = 126;
@@ -24,9 +24,12 @@ interface Walker {
   ty: number;
   wait: number;
   flip: boolean;
+  view: View;
   bubble: string;
   bubbleT: number;
-  sprite: HTMLCanvasElement;
+  /** 방향·프레임별 스프라이트 캐시 */
+  sprites: Map<string, HTMLCanvasElement>;
+  member: Member;
   key: string;
   dir?: [number, number];
 }
@@ -232,10 +235,13 @@ export class GuildHall {
       const w = this.walkers.get(m.id);
       if (!w) {
         const [gx, gy] = this.randomFree();
-        this.walkers.set(m.id, { id: m.id, gx, gy, tx: gx, ty: gy, wait: Math.random() * 20, flip: false, bubble: '', bubbleT: 0, sprite: drawMember(m), key });
-      } else if (w.key !== key) {
-        w.sprite = drawMember(m);
-        w.key = key;
+        this.walkers.set(m.id, { id: m.id, gx, gy, tx: gx, ty: gy, wait: Math.random() * 20, flip: Math.random() < 0.5, view: 'quarter', bubble: '', bubbleT: 0, sprites: new Map(), member: m, key });
+      } else {
+        w.member = m;
+        if (w.key !== key) {
+          w.sprites.clear();
+          w.key = key;
+        }
       }
     }
   }
@@ -282,9 +288,9 @@ export class GuildHall {
       if (!dir) continue;
       w.gx += dir[0] * SPEED;
       w.gy += dir[1] * SPEED;
-      // 화면에서 왼쪽으로 가면 좌우 반전
-      const sdx = dir[0] - dir[1];
-      if (sdx !== 0) w.flip = sdx < 0;
+      // 쿼터뷰 4방향: +gx 오른쪽 아래, +gy 왼쪽 아래, -gy 오른쪽 위, -gx 왼쪽 위
+      w.view = dir[0] > 0 || dir[1] > 0 ? 'quarter' : 'back';
+      w.flip = dir[1] > 0 || dir[0] < 0;
     }
   }
 
@@ -310,8 +316,11 @@ export class GuildHall {
     const c = iso.at(w.gx + 0.5, w.gy + 0.5); // 칸 중앙
     const x = c.x - SPRITE_W / 2;
     const y = c.y - SPRITE_H + 2;
-    const moving = !injured && w.wait <= 0;
-    const bob = moving && this.tick % 2 ? -1 : 0;
+    const moving = !injured && w.wait <= 0 && !!w.dir;
+    // 걷기 순서: 내딛기, 서기, 반대 발, 서기
+    const frame: Frame = moving ? ([1, 0, 2, 0] as const)[this.tick % 4] : 0;
+    const bob = moving && frame === 0 ? -1 : 0;
+    const sprite = this.sprite(w, injured ? 'front' : w.view, frame);
     g.fillStyle = 'rgba(60,30,10,0.3)';
     g.fillRect(c.x - 5, c.y, 10, 2);
     g.fillRect(c.x - 4, c.y - 1, 8, 1);
@@ -319,7 +328,7 @@ export class GuildHall {
       g.save();
       g.translate(c.x, c.y - 4);
       g.rotate(-Math.PI / 2);
-      g.drawImage(w.sprite, -SPRITE_H / 2, -SPRITE_W / 2);
+      g.drawImage(sprite, -SPRITE_H / 2, -SPRITE_W / 2);
       g.restore();
       this.bubbleAt(c.x + 4, c.y - 20, 'Z', '#7b5fc7');
       return;
@@ -328,12 +337,22 @@ export class GuildHall {
       g.save();
       g.translate(x + SPRITE_W, y + bob);
       g.scale(-1, 1);
-      g.drawImage(w.sprite, 0, 0);
+      g.drawImage(sprite, 0, 0);
       g.restore();
     } else {
-      g.drawImage(w.sprite, x, y + bob);
+      g.drawImage(sprite, x, y + bob);
     }
     if (w.bubbleT > 0) this.bubbleAt(c.x + 3, y - 4 + bob, w.bubble, '#c94c4c');
+  }
+
+  private sprite(w: Walker, view: View, frame: Frame): HTMLCanvasElement {
+    const k = `${view}${frame}`;
+    let c = w.sprites.get(k);
+    if (!c) {
+      c = drawMember(w.member, view, frame);
+      w.sprites.set(k, c);
+    }
+    return c;
   }
 
   private bubbleAt(x: number, y: number, text: string, color: string): void {

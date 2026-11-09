@@ -31,6 +31,47 @@ export const HUMANOID: Template = [
   '..oooo..oooo..',
 ];
 
+/** 정면(초상화), 쿼터뷰 앞(오른쪽 아래를 본다), 쿼터뷰 뒤(오른쪽 위를 본다). 왼쪽 방향은 좌우 반전으로 만든다 */
+export type View = 'front' | 'quarter' | 'back';
+/** 0 서기, 1 내딛기, 2 다리 모으기 */
+export type Frame = 0 | 1 | 2;
+
+const HEAD_QUARTER: Template = [
+  '....oooooo....',
+  '...ohhhhhho...',
+  '..ohhhhhhhho..',
+  '.ohhhhhhhhhho.',
+  '.ohhhssssssho.',
+  '.ohhssessseso.',
+  '.ohhssessseso.',
+  '..ohssssmsso..',
+  '...oooooooo...',
+];
+
+const HEAD_BACK: Template = [
+  '....oooooo....',
+  '...ohhhhhho...',
+  '..ohhhhhhhho..',
+  '.ohhhhhhhhhho.',
+  '.ohhhhhhhhhho.',
+  '.ohhhhhhhhhso.',
+  '.ohhhhhhhhhso.',
+  '..ohhhhhhhso..',
+  '...oooooooo...',
+];
+
+const LEGS: Record<Frame, Template> = {
+  0: HUMANOID.slice(13),
+  1: ['..oppppppppo..', '..opppoopppo..', '..oppo..oppo..', '.obbo....obbo.', '.oooo....oooo.'],
+  2: ['..oppppppppo..', '..oppppppppo..', '...oppppppo...', '...obbbbbbo...', '...oooooooo...'],
+};
+
+/** 방향과 걷기 프레임을 조합한 인간형 템플릿 */
+export function humanoid(view: View, frame: Frame): Template {
+  const head = view === 'front' ? HUMANOID.slice(0, 9) : view === 'quarter' ? HEAD_QUARTER : HEAD_BACK;
+  return [...head, ...HUMANOID.slice(9, 13), ...LEGS[frame]];
+}
+
 // 16x10 거미. c 몸, d 배, e 눈
 export const SPIDER: Template = [
   '......oooo......',
@@ -142,7 +183,7 @@ export const SPRITE_W = 18;
 export const SPRITE_H = 24;
 
 /** 길드원 스프라이트 18x21. 같은 길드원은 항상 같은 모습 */
-export function drawMember(m: Member): HTMLCanvasElement {
+export function drawMember(m: Member, view: View = 'front', frame: Frame = 0): HTMLCanvasElement {
   const h = hash(m.id + m.name);
   const cls = memberClass(m);
   const clothes = pickBy(CLOTHES, h, 3);
@@ -166,7 +207,7 @@ export function drawMember(m: Member): HTMLCanvasElement {
     ctx.fillStyle = shade(clothes, -70);
     ctx.fillRect(ox + 1, oy + 9, 12, 8);
   }
-  paint(ctx, HUMANOID, pal, ox, oy);
+  paint(ctx, humanoid(view, frame), pal, ox, oy);
 
   const metal = '#cfd8e3';
   if (cls === 'might') {
@@ -209,13 +250,14 @@ export function drawMember(m: Member): HTMLCanvasElement {
 }
 
 interface EnemyLook {
-  t: Template;
+  /** 'human'이면 방향과 프레임에 맞는 인간형 템플릿을 쓴다 */
+  t: Template | 'human';
   pal: Palette;
 }
 
 function enemyLook(name: string): EnemyLook {
   const human = (s: string, hair: string, cloth: string, pants = '#4b3b2a'): EnemyLook => ({
-    t: HUMANOID,
+    t: 'human',
     pal: { s, h: hair, e: OUTLINE, m: shade(s, -60), c: cloth, d: shade(cloth, -50), p: pants, b: '#3a2a1e' },
   });
   if (name.includes('거미')) return { t: SPIDER, pal: { c: '#5b4a6e', d: '#8e3b46', e: '#ff5a5a' } };
@@ -232,14 +274,15 @@ function enemyLook(name: string): EnemyLook {
 }
 
 /** 적 스프라이트. 우두머리는 왕관을 쓴다 */
-export function drawEnemy(name: string, boss: boolean): HTMLCanvasElement {
+export function drawEnemy(name: string, boss: boolean, view: View = 'front', frame: Frame = 0): HTMLCanvasElement {
   const look = enemyLook(name);
-  const w = Math.max(...look.t.map((r) => r.length)) + 4;
-  const h = look.t.length + 4;
+  const t = look.t === 'human' ? humanoid(view, frame) : look.t;
+  const w = Math.max(...t.map((r) => r.length)) + 4;
+  const h = t.length + 4;
   const [c, ctx] = canvas(w, h);
   const ox = 2;
   const oy = 4;
-  paint(ctx, look.t, look.pal, ox, oy - 1);
+  paint(ctx, t, look.pal, ox, oy - 1);
   if (boss) {
     const cx = Math.floor(w / 2);
     px(ctx, OUTLINE, [[cx - 3, 3], [cx + 2, 3], [cx - 3, 2], [cx + 2, 2], [cx - 1, 2], [cx, 2]]);
