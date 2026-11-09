@@ -52,6 +52,8 @@ const SLOT_LABEL: Record<Slot, string> = { weapon: '무기', armor: '갑옷', ac
 export class App {
   private screen: Screen;
   private resetArmed = false;
+  /** 위쪽 화면: 길드 홀 또는 월드맵 */
+  private topView: 'hall' | 'map' = 'hall';
   private notice = '';
   private hall: GuildHall;
 
@@ -86,6 +88,9 @@ export class App {
     if (action !== 'reset') this.resetArmed = false;
     if (action !== 'noop') this.notice = '';
     switch (action) {
+      case 'view':
+        this.topView = this.topView === 'hall' ? 'map' : 'hall';
+        break;
       case 'town':
         this.screen = { kind: 'start', town: arg as TownId };
         break;
@@ -240,6 +245,12 @@ export class App {
 
     const mapSlot = this.root.querySelector('#map-slot');
     if (mapSlot) mapSlot.prepend(drawWorldMap());
+    // 위쪽 지도는 우리 길드가 가운데 오도록 스크롤한다
+    const top = this.root.querySelector<HTMLElement>('.map-top');
+    if (top) {
+      const home = TOWNS[this.state.town];
+      top.scrollTop = (home.y / MAP_H) * top.scrollHeight - top.clientHeight / 2;
+    }
 
     const slot = this.root.querySelector('#hall-slot');
     if (slot) {
@@ -273,8 +284,9 @@ export class App {
         <div class="win name">${esc(this.state.name)}<small>${esc(TOWNS[this.state.town].name)}</small></div>
         <div class="win"><span class="coin"></span><b>${this.state.gold}</b></div>
         <div class="win"><b>${this.state.day}</b>일차</div>
+        <button class="win toggle" data-act="view">${this.topView === 'hall' ? '지도' : '길드'}</button>
       </div>
-      <div class="hall-wrap" id="hall-slot"></div>
+      ${this.topView === 'hall' ? '<div class="hall-wrap" id="hall-slot"></div>' : `<div class="map-top">${this.questMap()}</div>`}
       <div class="power">${tracks}</div>
       <div class="power"><span>출전 <b>${p.partySize}명</b></span><span>길드원 <b>${this.state.members.length}/${memberCap(this.state)}</b></span>${perks}${buff}</div>
     </header>`;
@@ -415,7 +427,7 @@ export class App {
 
   private quests(): string {
     const buff = this.state.buff ? `<div class="notice">${esc(this.state.buff.name)} 준비됨: 다음 의뢰에 효과가 난다.</div>` : '';
-    return buff + this.questMap() + this.state.quests.map((q) => this.questCard(q)).join('');
+    return buff + this.state.quests.map((q) => this.questCard(q)).join('');
   }
 
   /** 지도 위 좌표를 백분율 위치로 */
@@ -436,7 +448,11 @@ export class App {
         return `<button class="qmark r${q.rank} ${ok ? '' : 'no'}" style="${this.pos({ x: site.x + i * 7, y: site.y - 6 })}" ${ok ? `data-act="quest" data-arg="${q.id}"` : ''} title="${esc(q.name)}">${rankName(q.rank)}</button>`;
       })
       .join('');
-    return `<div class="map win" id="map-slot">
+    const towns = TOWN_IDS.filter((id) => id !== this.state.town)
+      .map((id) => `<span class="slabel town" style="${this.pos({ x: TOWNS[id].x, y: TOWNS[id].y + 7 })}">${esc(TOWNS[id].name.split(' ').pop()!)}</span>`)
+      .join('');
+    return `<div class="map" id="map-slot">
+      ${towns}
       <span class="home" style="${this.pos({ x: home.x, y: home.y + 6 })}">우리 길드</span>
       ${marks}
     </div>`;

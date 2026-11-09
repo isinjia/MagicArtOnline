@@ -206,3 +206,9 @@ nav button { font-size: 12px; }
 .perks { margin: 4px 0; padding-left: 18px; line-height: 1.6; }
 .name-input { font: inherit; font-size: 15px; padding: 8px; border: var(--px) solid var(--ink); background: var(--paper); width: 100%; }
 .hud .name small { display: block; font-size: 10px; color: var(--muted); font-weight: 400; }
+
+/* 위쪽 화면 전환: 길드 홀 ↔ 월드맵 */
+.hud .toggle { font: inherit; font-weight: 700; color: #fff; background: var(--blue); text-shadow: 1px 1px 0 var(--ink); cursor: pointer; justify-content: center; }
+.map-top { border: var(--px) solid var(--ink); aspect-ratio: 176 / 126; overflow-y: auto; background: #4fa3d6; }
+.map-top .map { border: 0; }
+.slabel.town { font-size: 10px; font-weight: 700; }
